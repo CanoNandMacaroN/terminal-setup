@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# uv tools hash: {{ include "dot_myshell/uv_tools.list" | sha256sum }}
+
+command -v uv >/dev/null 2>&1 || {
+    echo "uv is required before applying the tool manifest." >&2
+    exit 1
+}
+
+tools_file="$HOME/.myshell/uv_tools.list"
+[[ -f "$tools_file" ]] || {
+    echo "uv tool manifest is missing: $tools_file" >&2
+    exit 1
+}
+
+desired_file="$(mktemp "${TMPDIR:-/tmp}/uv-desired.XXXXXX")"
+current_file="$(mktemp "${TMPDIR:-/tmp}/uv-current.XXXXXX")"
+trap 'rm -f -- "$desired_file" "$current_file"' EXIT
+
+while IFS= read -r tool || [[ -n "$tool" ]]; do
+    [[ -z "$tool" || "$tool" =~ ^[[:space:]]*# ]] && continue
+    [[ "$tool" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+        echo "Invalid uv tool entry: $tool" >&2
+        exit 1
+    }
+    printf '%s\n' "$tool"
+done < "$tools_file" | LC_ALL=C sort -u > "$desired_file"
+
+uv tool list | awk 'NF && $1 != "-" { print $1 }' | LC_ALL=C sort -u > "$current_file"
+
+while IFS= read -r tool; do
+    [[ -n "$tool" ]] || continue
+    uv tool install "$tool" --force
+done < "$desired_file"
+
+if [[ "${TERMINAL_SETUP_PRUNE:-0}" == 1 ]]; then
+    while IFS= read -r tool; do
+        [[ -n "$tool" ]] || continue
+        grep -Fqx -- "$tool" "$desired_file" || uv tool uninstall "$tool"
+    done < "$current_file"
+else
+    echo "Pruning disabled. Re-run setup with --prune to remove undeclared uv tools."
+fi

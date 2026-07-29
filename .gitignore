@@ -1,0 +1,11 @@
+.DS_Store
+*.log
+*.tmp
+.idea/
+.vscode/
+dist/
+!/lib/
+!/lib/*.sh
+dotfiles-full-backup-*.tar.gz
+key.txt
+*.age

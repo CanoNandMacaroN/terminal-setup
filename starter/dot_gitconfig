@@ -1,0 +1,15 @@
+[include]
+    path = ~/.gitconfig.local
+
+[alias]
+    st = status
+    co = checkout
+    br = branch
+    ci = commit
+    lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+
+[core]
+    excludesfile = ~/.config/git/ignore
+
+[init]
+    defaultBranch = main

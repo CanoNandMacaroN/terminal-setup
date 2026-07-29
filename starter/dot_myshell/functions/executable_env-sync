@@ -1,0 +1,78 @@
+# Descr: Capture managed package manifests, commit only those files, then push.
+# Usage: env-sync [commit message]
+
+emulate -L zsh
+setopt pipe_fail local_traps
+
+local platform command_name
+platform="$(uname -s)"
+
+local -a required_commands=(uv chezmoi git)
+[[ "$platform" != Darwin ]] || required_commands+=(brew)
+for command_name in "${required_commands[@]}"; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        print -u2 -- "Missing command: $command_name"
+        return 1
+    fi
+done
+
+local temp_dir
+temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/env-sync.XXXXXX")" || return 1
+trap 'rm -rf -- "$temp_dir"' EXIT HUP INT TERM
+
+local uv_tools_file="$HOME/.myshell/uv_tools.list"
+local temp_uv_tools="$temp_dir/uv_tools.list"
+uv tool list | awk 'NF && $1 != "-" { print $1 }' | LC_ALL=C sort -u > "$temp_uv_tools" || {
+    print -u2 -- "uv tool manifest capture failed; existing files were not changed."
+    return 1
+}
+
+local -a target_files=()
+if [[ "$platform" == Darwin ]]; then
+    local brewfile="$HOME/.Brewfile"
+    local temp_brewfile="$temp_dir/Brewfile"
+    {
+        printf '# Top-level formulae\n'
+        brew leaves | LC_ALL=C sort | sed 's/^/brew "/;s/$/"/'
+    } > "$temp_brewfile" || {
+        print -u2 -- "Homebrew manifest capture failed; existing files were not changed."
+        return 1
+    }
+    cmp -s -- "$temp_brewfile" "$brewfile" || mv -- "$temp_brewfile" "$brewfile"
+    target_files+=("$brewfile")
+fi
+
+mkdir -p -- "${uv_tools_file:h}"
+cmp -s -- "$temp_uv_tools" "$uv_tools_file" || mv -- "$temp_uv_tools" "$uv_tools_file"
+target_files+=("$uv_tools_file")
+
+chezmoi add --secrets error -- "${target_files[@]}" || return 1
+
+local source_dir upstream ahead_count target source_path
+local -a source_files=()
+source_dir="$(chezmoi source-path)" || return 1
+for target in "${target_files[@]}"; do
+    source_path="$(chezmoi source-path "$target")" || return 1
+    source_files+=("${source_path#$source_dir/}")
+done
+
+upstream="$(git -C "$source_dir" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" || {
+    print -u2 -- "The current branch has no upstream. Configure it before env-sync."
+    return 1
+}
+ahead_count="$(git -C "$source_dir" rev-list --count "$upstream..HEAD")" || return 1
+if (( ahead_count > 0 )); then
+    print -u2 -- "The current branch already has $ahead_count unpushed commit(s). Push or inspect them first."
+    return 1
+fi
+
+git -C "$source_dir" add -- "${source_files[@]}" || return 1
+if git -C "$source_dir" diff --cached --quiet -- "${source_files[@]}"; then
+    print -- "Package manifests are already current."
+    return 0
+fi
+
+local msg="${1:-chore: sync package manifests}"
+git -C "$source_dir" commit -m "$msg" -- "${source_files[@]}" || return 1
+git -C "$source_dir" push || return 1
+print -- "Package manifests committed and pushed."

@@ -1,0 +1,78 @@
+typeset -U PATH path FPATH fpath
+
+if [[ -d "$HOME/.myshell/functions" ]]; then
+    fpath=("$HOME/.myshell/functions" $fpath)
+    autoload -Uz "$HOME/.myshell/functions"/*(:t)
+fi
+
+[[ -r "$HOME/.myshell/alias.sh" ]] && source "$HOME/.myshell/alias.sh"
+
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init zsh)"
+fi
+
+autoload -Uz compinit
+if command -v brew >/dev/null 2>&1; then
+    FPATH="$(brew --prefix)/share/zsh-completions:$FPATH"
+fi
+compinit -C
+
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|=*' 'l:|=*'
+
+HISTSIZE=50000
+SAVEHIST=50000
+HISTFILE="$HOME/.zsh_history"
+setopt EXTENDED_HISTORY HIST_EXPIRE_DUPS_FIRST HIST_IGNORE_DUPS HIST_IGNORE_SPACE
+setopt SHARE_HISTORY INC_APPEND_HISTORY
+
+autoload -U up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+bindkey '^[[A' up-line-or-beginning-search
+bindkey '^[[B' down-line-or-beginning-search
+
+if command -v fzf >/dev/null 2>&1; then
+    source <(fzf --zsh)
+    export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+    if command -v fd >/dev/null 2>&1; then
+        export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+        export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+        export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+    fi
+fi
+
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init zsh)"
+command -v fnm >/dev/null 2>&1 && eval "$(fnm env --use-on-cd --shell zsh)"
+
+function y() {
+    local tmp cwd
+    tmp="$(mktemp -t 'yazi-cwd.XXXXXX')" || return
+    command yazi "$@" --cwd-file="$tmp"
+    IFS= read -r -d '' cwd < "$tmp"
+    command rm -f -- "$tmp"
+    [[ -n "$cwd" && "$cwd" != "$PWD" && -d "$cwd" ]] && builtin cd -- "$cwd"
+}
+
+for plugin_file in \
+    "${HOMEBREW_PREFIX:-}/share/zsh-autosuggestions/zsh-autosuggestions.zsh" \
+    /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh; do
+    [[ -r "$plugin_file" ]] && source "$plugin_file" && break
+done
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+
+for plugin_file in \
+    "${HOMEBREW_PREFIX:-}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" \
+    /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
+    [[ -r "$plugin_file" ]] && source "$plugin_file" && break
+done
+
+if [[ "$(uname -s)" == Darwin ]]; then
+    export PNPM_HOME="$HOME/Library/pnpm"
+else
+    export PNPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pnpm"
+fi
+case ":$PATH:" in
+    *":$PNPM_HOME/bin:"*) ;;
+    *) export PATH="$PNPM_HOME/bin:$PATH" ;;
+esac

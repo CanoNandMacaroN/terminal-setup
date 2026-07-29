@@ -1,0 +1,18 @@
+# Usage: set-ssh-key KEY_NAME
+
+local key_name=$1
+local key="$HOME/.ssh/$key_name"
+
+if [[ -z "$key_name" || ! -f "$key" ]]; then
+    echo "Usage: set-ssh-key KEY_NAME" >&2
+    echo "Available public identities:" >&2
+    for public_key in "$HOME"/.ssh/*.pub; do
+        [[ -e "$public_key" ]] || continue
+        basename "$public_key" .pub >&2
+    done
+    return 1
+fi
+
+ssh-add -D >/dev/null 2>&1 || true
+ssh-add "$key"
+echo "Active SSH key: $key_name"
