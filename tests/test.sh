@@ -65,7 +65,7 @@ fake_bin="$TEST_TMP/fake-bin"
 fake_home="$TEST_TMP/fake-manifest-home"
 fake_log="$TEST_TMP/manifest.log"
 mkdir -p "$fake_bin" "$fake_home/.myshell"
-cp "$ROOT/starter/dot_myshell/uv_tools.list" "$fake_home/.myshell/uv_tools.list"
+cp "$ROOT/starter/dot_myshell/uv-tools.toml" "$fake_home/.myshell/uv-tools.toml"
 
 cat > "$fake_bin/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -97,6 +97,9 @@ FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_S
 if rg -q 'cleanup|uninstall' "$fake_log"; then
     fail "default reconciliation pruned packages"
 fi
+rg -q '^uv python install 3\.10\.20$' "$fake_log" || fail "uv Python version was not installed"
+rg -q '^uv tool install --python 3\.10\.20 harlequin==2\.2\.1 --force$' "$fake_log" || fail "harlequin was not version-pinned"
+rg -q '^uv tool install --python 3\.10\.20 ruff==0\.16\.0 --force$' "$fake_log" || fail "ruff was not version-pinned"
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-packages.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-uv.sh" >/dev/null
@@ -166,7 +169,7 @@ if rg -n --hidden --glob '!.git/**' --glob '!tests/test.sh' \
     "$personal_pattern|$secret_pattern" "$ROOT"; then
     fail "personal or secret-like data found"
 fi
-if rg -n --hidden --glob '!.git/**' --glob '!tests/test.sh' '/Users/[^ /]+' "$ROOT"; then
+if rg -n --hidden --glob '!.git/**' --glob '!**/tests/test.sh' '/Users/[^ /]+' "$ROOT"; then
     fail "personal absolute path found"
 fi
 for readme in "$ROOT/README.md" "$ROOT/README_EN.md"; do

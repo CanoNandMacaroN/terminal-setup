@@ -299,6 +299,8 @@ chezmoi 记录渲染后脚本的状态：
 
 清理范围只包括 Brew Formula 和 uv 工具，不处理 Cask。
 
+公共 starter 使用 `~/.myshell/uv-tools.toml` 固定 uv 托管的 CPython 3.10.20、工具包版本和可选附加依赖。默认包含 `ruff`：用于快速的 Python 检查和格式化；以及 `harlequin`：用于在终端浏览和查询本地数据库。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
+
 ## Node 与 pnpm 的边界
 
 ```text
@@ -348,7 +350,7 @@ chezmoi verify
 env-sync "chore: sync package manifests"
 ```
 
-macOS 不采集 Tap/Cask；Linux/WSL 只采集 uv。该函数只暂存对应清单，有未推送提交时会停止，无变化时不会创建空提交。
+macOS 不采集 Tap/Cask；Linux/WSL 只采集 uv。该函数从 uv tool receipt 采集固定版本和额外依赖，生成 `uv-tools.toml`；只暂存对应清单，有未推送提交时会停止，无变化时不会创建空提交。
 
 安装器的完整公开选项：
 

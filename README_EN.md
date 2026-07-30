@@ -297,6 +297,8 @@ On a server:
 
 Pruning affects Brew Formulae and uv tools only, never casks.
 
+The public starter uses `~/.myshell/uv-tools.toml` to pin uv-managed CPython 3.10.20, tool package versions, and optional extra dependencies. It includes `ruff` for fast Python linting and formatting, and `harlequin` for browsing and querying local databases from the terminal. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
+
 ## Node and pnpm Ownership
 
 ```text
@@ -346,7 +348,7 @@ Capture top-level Formulae and uv tools back into the manifests:
 env-sync "chore: sync package manifests"
 ```
 
-macOS does not capture Taps or casks. Linux/WSL captures uv only. The function stages only those manifests, stops when unpushed commits exist, and avoids empty commits.
+macOS does not capture Taps or casks. Linux/WSL captures uv only. The function reads uv tool receipts to capture pinned versions and extra dependencies into `uv-tools.toml`; it stages only those manifests, stops when unpushed commits exist, and avoids empty commits.
 
 Complete public installer options:
 
