@@ -97,14 +97,19 @@ FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_S
 if rg -q 'cleanup|uninstall' "$fake_log"; then
     fail "default reconciliation pruned packages"
 fi
-rg -q '^uv python install 3\.10\.20$' "$fake_log" || fail "uv Python version was not installed"
-rg -q '^uv tool install --python 3\.10\.20 harlequin==2\.2\.1 --force$' "$fake_log" || fail "harlequin was not version-pinned"
-rg -q '^uv tool install --python 3\.10\.20 ruff==0\.16\.0 --force$' "$fake_log" || fail "ruff was not version-pinned"
+if rg -q '^uv python install|^uv tool install --python' "$fake_log"; then
+    fail "public uv tools unexpectedly pinned a Python interpreter"
+fi
+rg -q '^uv tool install harlequin==2\.2\.1 --force$' "$fake_log" || fail "harlequin package was not version-pinned"
+rg -q '^uv tool install ruff==0\.16\.0 --force$' "$fake_log" || fail "ruff package was not version-pinned"
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-packages.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-uv.sh" >/dev/null
 rg -q 'brew bundle cleanup' "$fake_log" || fail "explicit Brew pruning was not executed"
 rg -q 'uv tool uninstall black' "$fake_log" || fail "explicit uv pruning was not executed"
+if rg -q 'uv tool uninstall ruff' "$fake_log"; then
+    fail "explicit uv pruning removed a declared tool"
+fi
 
 echo "[7/10] Age enablement and encrypted add"
 age_home="$TEST_TMP/age-home"

@@ -269,6 +269,29 @@ Chezmoi maintains two directions:
 
 The repository README, license, tests, and installers are not applied to Home. Only `starter/` acts as the bundled public chezmoi source.
 
+## Bidirectional Package-Manifest Synchronization
+
+The Homebrew and uv manifests have both a Home target state and a chezmoi source state:
+
+| Manifest | Home target | Public starter source |
+|---|---|---|
+| Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
+| uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
+
+When `env-sync` runs inside an initialized chezmoi repository, it reads the current Brew/uv installations, updates the target manifests under Home, captures them back into the local chezmoi source with `chezmoi add`, then stages, commits, and pushes only the corresponding source files:
+
+```text
+installed state → env-sync → Home target manifests → chezmoi add → chezmoi source manifests → Git
+```
+
+Recovery and normal application use the opposite direction. `chezmoi apply` writes the Home target manifests from source, then the `run_onchange` hooks invoke Brew and uv to install missing tools:
+
+```text
+Git/chezmoi source manifests → chezmoi apply → Home target manifests → run_onchange → installed state
+```
+
+The `run_onchange_*.sh.tmpl` files are special executable source entries, not ordinary scripts copied permanently into Home. Git synchronizes declarations and hook sources, never uv caches, tool virtual environments, downloaded Python builds, or Homebrew download caches.
+
 ## Why `run_onchange` Keeps Packages Synchronized
 
 The script template embeds the manifest SHA-256 in its rendered output:
@@ -297,7 +320,7 @@ On a server:
 
 Pruning affects Brew Formulae and uv tools only, never casks.
 
-The public starter uses `~/.myshell/uv-tools.toml` to pin uv-managed CPython 3.10.20, tool package versions, and optional extra dependencies. It includes `ruff` for fast Python linting and formatting, and `harlequin` for browsing and querying local databases from the terminal. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
+The public starter uses `~/.myshell/uv-tools.toml` to pin tool package versions and optional extra dependencies without pinning Python; uv selects a compatible interpreter for each tool. It includes `ruff` for fast Python linting and formatting, and `harlequin` for browsing and querying local databases from the terminal. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
 
 ## Node and pnpm Ownership
 

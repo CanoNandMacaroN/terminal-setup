@@ -271,6 +271,29 @@ chezmoi 维护两个方向：
 
 仓库根目录中的 README、License、测试和安装器不会被 apply 到 Home；只有 `starter/` 被用作公共 chezmoi 源状态。
 
+## 软件清单的双向同步
+
+Homebrew 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
+
+| 清单 | Home 目标文件 | 公共 starter 源文件 |
+|---|---|---|
+| Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
+| uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
+
+在已经初始化的 chezmoi 仓库中运行 `env-sync` 时，它读取当前 Brew/uv 安装状态，先更新 Home 中的目标清单，再通过 `chezmoi add` 把清单收回本机 chezmoi 源目录，最后只暂存对应源文件并提交、推送：
+
+```text
+当前安装状态 → env-sync → Home 目标清单 → chezmoi add → chezmoi 源清单 → Git
+```
+
+在新机器恢复或日常应用时，方向相反。`chezmoi apply` 从源目录写出 Home 目标清单，再由 `run_onchange` 钩子调用 Brew 和 uv 补齐工具：
+
+```text
+Git/chezmoi 源清单 → chezmoi apply → Home 目标清单 → run_onchange → 当前安装状态
+```
+
+`run_onchange_*.sh.tmpl` 是 chezmoi 的特殊执行源，不会作为普通脚本长期复制到 Home。Git 只同步声明清单和脚本源，不同步 uv 缓存、工具虚拟环境、Python 二进制或 Homebrew 下载缓存。
+
 ## 为什么 `run_onchange` 能持续同步软件
 
 脚本模板会把清单的 SHA-256 写入渲染结果：
@@ -299,7 +322,7 @@ chezmoi 记录渲染后脚本的状态：
 
 清理范围只包括 Brew Formula 和 uv 工具，不处理 Cask。
 
-公共 starter 使用 `~/.myshell/uv-tools.toml` 固定 uv 托管的 CPython 3.10.20、工具包版本和可选附加依赖。默认包含 `ruff`：用于快速的 Python 检查和格式化；以及 `harlequin`：用于在终端浏览和查询本地数据库。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
+公共 starter 使用 `~/.myshell/uv-tools.toml` 固定工具包版本和可选附加依赖，但不固定 Python；uv 会为每个工具自行选择兼容解释器。默认包含 `ruff`：用于快速的 Python 检查和格式化；以及 `harlequin`：用于在终端浏览和查询本地数据库。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
 
 ## Node 与 pnpm 的边界
 

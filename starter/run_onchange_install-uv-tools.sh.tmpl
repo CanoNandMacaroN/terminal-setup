@@ -48,7 +48,7 @@ function emit_tool() {
     if (seen[name]++) fail("duplicate tool name: " name)
     print name "\t" package "\t" python "\t" dependencies
     tool_count++
-    name=""; package=""; dependencies=""
+    name=""; package=""; python=""; dependencies=""
 }
 {
     line=trim($0)
@@ -58,50 +58,47 @@ function emit_tool() {
     if (!separator) fail("invalid line: " line)
     key=trim(substr(line, 1, separator-1))
     value=trim(substr(line, separator+1))
-    if (!in_tool) {
-        if (key == "version") { if (version != "") fail("duplicate version"); version=value }
-        else if (key == "python") { if (python != "") fail("duplicate python"); python=quoted(value, "python") }
-        else fail("unknown top-level key: " key)
-    } else if (key == "name") { if (name != "") fail("duplicate name"); name=quoted(value, "name") }
+    if (!in_tool) fail("expected [[tool]] before: " line)
+    else if (key == "name") { if (name != "") fail("duplicate name"); name=quoted(value, "name") }
     else if (key == "package") { if (package != "") fail("duplicate package"); package=quoted(value, "package") }
+    else if (key == "python") {
+        if (python != "") fail("duplicate python")
+        python=quoted(value, "python")
+        if (python !~ /^[0-9]+\.[0-9]+(\.[0-9]+)?$/) fail("invalid python version: " python)
+    }
     else if (key == "with") { if (dependencies != "") fail("duplicate with"); dependencies=extra_dependencies(value) }
     else fail("unknown tool key: " key)
 }
 END {
     if (invalid) exit 1
     emit_tool()
-    if (version != "1") fail("version must be 1")
-    if (python != "3.10.20") fail("python must be 3.10.20")
     if (tool_count == 0) fail("at least one [[tool]] is required")
 }
 ' "$manifest" | LC_ALL=C sort > "$desired_file"
 
-python_version="$(awk -F '\t' 'NR == 1 { print $3; exit }' "$desired_file")"
-uv python install "$python_version"
+cut -f3 "$desired_file" | sed '/^$/d' | LC_ALL=C sort -u | while IFS= read -r python_version; do
+    uv python install "$python_version"
+done
 
 uv tool list | awk 'NF && $1 != "-" { print $1 }' | LC_ALL=C sort -u > "$current_file"
 
-while IFS= read -r tool; do
-    [[ -n "$tool" ]] || continue
-    while IFS=$'\t' read -r name package python with_csv; do
-        [[ "$name" == "$tool" ]] || continue
-        args=(tool install --python "$python")
-        if [[ -n "$with_csv" ]]; then
-            IFS=',' read -r -a dependencies <<< "$with_csv"
-            for dependency in "${dependencies[@]}"; do
-                args+=(--with "$dependency")
-            done
-        fi
-        args+=("$package" --force)
-        uv "${args[@]}"
-        break
-    done < "$desired_file"
-done < <(cut -f1 "$desired_file")
+while IFS=$'\t' read -r name package python with_csv; do
+    args=(tool install)
+    [[ -z "$python" ]] || args+=(--python "$python")
+    if [[ -n "$with_csv" ]]; then
+        IFS=',' read -r -a dependencies <<< "$with_csv"
+        for dependency in "${dependencies[@]}"; do
+            args+=(--with "$dependency")
+        done
+    fi
+    args+=("$package" --force)
+    uv "${args[@]}"
+done < "$desired_file"
 
 if [[ "${TERMINAL_SETUP_PRUNE:-0}" == 1 ]]; then
     while IFS= read -r tool; do
         [[ -n "$tool" ]] || continue
-        grep -Fqx -- "$tool" "$desired_file" || uv tool uninstall "$tool"
+        cut -f1 "$desired_file" | grep -Fqx -- "$tool" || uv tool uninstall "$tool"
     done < "$current_file"
 else
     echo "Pruning disabled. Re-run setup with --prune to remove undeclared uv tools."

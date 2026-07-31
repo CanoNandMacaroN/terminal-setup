@@ -1,6 +1,3 @@
-version = 1
-python = "3.10.20"
-
 [[tool]]
 name = "harlequin"
 package = "harlequin==2.2.1"

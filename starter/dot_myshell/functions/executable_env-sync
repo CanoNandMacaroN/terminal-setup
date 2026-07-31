@@ -66,8 +66,6 @@ if [[ ! -s "$temp_uv_entries" ]]; then
     return 1
 fi
 {
-    printf 'version = 1\n'
-    printf 'python = "3.10.20"\n\n'
     while IFS= read -r tool_name; do
         cat "$temp_dir/uv-tool-$tool_name"
     done < <(LC_ALL=C sort -u "$temp_uv_entries")
