@@ -67,12 +67,17 @@ for plugin_file in \
     [[ -r "$plugin_file" ]] && source "$plugin_file" && break
 done
 
-if [[ "$(uname -s)" == Darwin ]]; then
-    export PNPM_HOME="$HOME/Library/pnpm"
-else
-    export PNPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pnpm"
-fi
+{{ if eq .chezmoi.os "darwin" -}}
+export PNPM_HOME="{{ .chezmoi.homeDir }}/Library/pnpm"
+{{ else -}}
+export PNPM_HOME="${XDG_DATA_HOME:-{{ .chezmoi.homeDir }}/.local/share}/pnpm"
+{{ end -}}
 case ":$PATH:" in
     *":$PNPM_HOME/bin:"*) ;;
     *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
+
+{{ if eq .chezmoi.os "darwin" -}}
+# CodeBuddy checks for this exact absolute path before appending it itself.
+export PATH="{{ .chezmoi.homeDir }}/.codebuddy/bin:$PATH"
+{{ end -}}

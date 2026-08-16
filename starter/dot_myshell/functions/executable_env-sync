@@ -1,52 +1,101 @@
-# Descr: Capture managed package manifests, commit only those files, then push.
-# Usage: env-sync [commit message]
+# Descr: Capture Homebrew and uv manifests into the local chezmoi source state.
+# Usage: env-sync
 
 emulate -L zsh
 setopt pipe_fail local_traps
 
-local platform command_name
-platform="$(uname -s)"
-
-local -a required_commands=(uv chezmoi git)
-[[ "$platform" != Darwin ]] || required_commands+=(brew)
-for command_name in "${required_commands[@]}"; do
+local command_name
+for command_name in uv chezmoi; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         print -u2 -- "Missing command: $command_name"
         return 1
     fi
 done
+if [[ "$(uname -s)" == Darwin ]] && ! command -v brew >/dev/null 2>&1; then
+    print -u2 -- "Missing command: brew"
+    return 1
+fi
 
+local brewfile="$HOME/.Brewfile"
+local uv_tools_file="$HOME/.myshell/uv-tools.toml"
 local temp_dir
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/env-sync.XXXXXX")" || return 1
 trap 'rm -rf -- "$temp_dir"' EXIT HUP INT TERM
 
-local uv_tools_file="$HOME/.myshell/uv-tools.toml"
+local temp_brewfile="$temp_dir/Brewfile"
 local temp_uv_tools="$temp_dir/uv-tools.toml"
 local temp_uv_entries="$temp_dir/uv-tools.entries"
-: > "$temp_uv_entries"
 
+local -a managed_targets
+managed_targets=("$uv_tools_file")
+if [[ "$(uname -s)" == Darwin ]]; then
+    print -- "Capturing Homebrew taps, top-level formulae, and casks..."
+    {
+        printf '# Third-party taps\n'
+        brew tap | LC_ALL=C sort | sed 's/^/tap "/;s/$/"/'
+        printf '\n# Top-level formulae\n'
+        brew leaves | LC_ALL=C sort | sed 's/^/brew "/;s/$/"/'
+        printf '\n# macOS applications\n'
+        brew list --cask | LC_ALL=C sort | sed 's/^/cask "/;s/$/"/'
+    } > "$temp_brewfile" || {
+        print -u2 -- "Homebrew manifest capture failed; existing manifests were not changed."
+        return 1
+    }
+    managed_targets=("$brewfile" "$uv_tools_file")
+else
+    print -- "Skipping the macOS-only Homebrew manifest."
+fi
+
+print -- "Capturing uv tool requirements..."
+: > "$temp_uv_entries"
 local receipt tool_name direct_package package_name specifier extras entry_file
 for receipt in "$HOME"/.local/share/uv/tools/*/uv-receipt.toml(N); do
     tool_name="${receipt:h:t}"
     direct_package=""
     extras=()
     while IFS=$'\t' read -r package_name specifier; do
-        [[ -z "$package_name" || -z "$specifier" ]] && continue
+        [[ -n "$package_name" ]] || continue
+        [[ "$package_name" != pyyaml ]] || package_name="PyYAML"
         if [[ "$package_name" == "$tool_name" ]]; then
             direct_package="$package_name$specifier"
         else
             extras+=("$package_name$specifier")
         fi
-    done < <(sed -nE 's/.*name = "([^"]+)", specifier = "([^"]+)".*/\1\t\2/p' "$receipt")
+    done < <(sed -nE '
+        s/.*name = "([^"]+)", specifier = "([^"]+)".*/\1\t\2/p
+        s/.*name = "([^"]+)"[^,}]*\}.*/\1\t/p
+    ' "$receipt")
     if [[ -z "$direct_package" ]]; then
-        print -u2 -- "Cannot find the direct package version in $receipt."
+        print -u2 -- "Cannot find the direct requirement for $tool_name in $receipt."
         return 1
     fi
+
+    local python_requirement=""
+    if [[ -r "$uv_tools_file" ]]; then
+        python_requirement="$(awk -v wanted="$tool_name" '
+            $0 == "[[tool]]" { current=""; next }
+            /^name = "/ {
+                current=$0
+                sub(/^name = "/, "", current)
+                sub(/"$/, "", current)
+                next
+            }
+            /^python = "/ && current == wanted {
+                value=$0
+                sub(/^python = "/, "", value)
+                sub(/"$/, "", value)
+                print value
+                exit
+            }
+        ' "$uv_tools_file")"
+    fi
+
     entry_file="$temp_dir/uv-tool-$tool_name"
     {
         printf '[[tool]]\n'
         printf 'name = "%s"\n' "$tool_name"
         printf 'package = "%s"\n' "$direct_package"
+        [[ -z "$python_requirement" ]] || printf 'python = "%s"\n' "$python_requirement"
         if (( ${#extras[@]} > 0 )); then
             printf 'with = ['
             local extra extra_index=1
@@ -61,8 +110,9 @@ for receipt in "$HOME"/.local/share/uv/tools/*/uv-receipt.toml(N); do
     } > "$entry_file"
     printf '%s\n' "$tool_name" >> "$temp_uv_entries"
 done
+
 if [[ ! -s "$temp_uv_entries" ]]; then
-    print -u2 -- "No uv tool receipts were found; existing files were not changed."
+    print -u2 -- "No uv tool receipts were found; existing manifests were not changed."
     return 1
 fi
 {
@@ -71,52 +121,15 @@ fi
     done < <(LC_ALL=C sort -u "$temp_uv_entries")
 } > "$temp_uv_tools"
 
-local -a target_files=()
-if [[ "$platform" == Darwin ]]; then
-    local brewfile="$HOME/.Brewfile"
-    local temp_brewfile="$temp_dir/Brewfile"
-    {
-        printf '# Top-level formulae\n'
-        brew leaves | LC_ALL=C sort | sed 's/^/brew "/;s/$/"/'
-    } > "$temp_brewfile" || {
-        print -u2 -- "Homebrew manifest capture failed; existing files were not changed."
-        return 1
-    }
-    cmp -s -- "$temp_brewfile" "$brewfile" || mv -- "$temp_brewfile" "$brewfile"
-    target_files+=("$brewfile")
-fi
-
 mkdir -p -- "${uv_tools_file:h}"
-cmp -s -- "$temp_uv_tools" "$uv_tools_file" || mv -- "$temp_uv_tools" "$uv_tools_file"
-target_files+=("$uv_tools_file")
-
-chezmoi add --secrets error -- "${target_files[@]}" || return 1
-
-local source_dir upstream ahead_count target source_path
-local -a source_files=()
-source_dir="$(chezmoi source-path)" || return 1
-for target in "${target_files[@]}"; do
-    source_path="$(chezmoi source-path "$target")" || return 1
-    source_files+=("${source_path#$source_dir/}")
-done
-
-upstream="$(git -C "$source_dir" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" || {
-    print -u2 -- "The current branch has no upstream. Configure it before env-sync."
-    return 1
-}
-ahead_count="$(git -C "$source_dir" rev-list --count "$upstream..HEAD")" || return 1
-if (( ahead_count > 0 )); then
-    print -u2 -- "The current branch already has $ahead_count unpushed commit(s). Push or inspect them first."
-    return 1
+if [[ "$(uname -s)" == Darwin ]] && ! cmp -s -- "$temp_brewfile" "$brewfile"; then
+    mv -- "$temp_brewfile" "$brewfile"
+    print -- "Updated $brewfile"
+fi
+if ! cmp -s -- "$temp_uv_tools" "$uv_tools_file"; then
+    mv -- "$temp_uv_tools" "$uv_tools_file"
+    print -- "Updated $uv_tools_file"
 fi
 
-git -C "$source_dir" add -- "${source_files[@]}" || return 1
-if git -C "$source_dir" diff --cached --quiet -- "${source_files[@]}"; then
-    print -- "Package manifests are already current."
-    return 0
-fi
-
-local msg="${1:-chore: sync package manifests}"
-git -C "$source_dir" commit -m "$msg" -- "${source_files[@]}" || return 1
-git -C "$source_dir" push || return 1
-print -- "Package manifests committed and pushed."
+chezmoi add --secrets error -- "${managed_targets[@]}" || return 1
+print -- "Captured manifests into the local chezmoi source; nothing was committed or pushed."

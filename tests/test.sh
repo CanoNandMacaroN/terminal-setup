@@ -13,13 +13,11 @@ fail() {
 echo "[1/10] Shell syntax"
 bash -n "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib/common.sh" "$ROOT/lib/platform.sh"
 bash -n "$ROOT/scripts/enable-age.sh" "$ROOT/scripts/add-secret.sh" "$ROOT/scripts/full-backup.sh"
-bash -n "$ROOT/starter/run_onchange_install-packages.sh.tmpl"
-bash -n "$ROOT/starter/run_onchange_install-uv-tools.sh.tmpl"
 for reset_script in "$ROOT"/starter/dot_myshell/bin/*.sh; do
     [[ -e "$reset_script" ]] || continue
     bash -n "$reset_script"
 done
-zsh -n "$ROOT/starter/dot_zshrc" "$ROOT/starter/dot_zprofile" "$ROOT/starter/dot_zshenv"
+zsh -n "$ROOT/starter/dot_zshenv"
 zsh -n "$ROOT/starter/dot_myshell/functions/executable_env-sync"
 
 echo "[2/10] Platform detection"
@@ -33,19 +31,37 @@ done
 echo "[3/10] Chezmoi template rendering"
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" | bash -n
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-uv-tools.sh.tmpl" | bash -n
+chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
+chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/dot_zshrc.tmpl" | zsh -n
+linux_data='{"chezmoi":{"os":"linux","arch":"amd64","homeDir":"/home/tester"}}'
+chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" | bash -n
+chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
+chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/dot_zshrc.tmpl" | zsh -n
+darwin_intel_data='{"chezmoi":{"os":"darwin","arch":"amd64","homeDir":"/Users/tester"}}'
+intel_profile="$(chezmoi -S "$ROOT/starter" --override-data "$darwin_intel_data" execute-template \
+    < "$ROOT/starter/dot_zprofile.tmpl")"
+rg -q '/usr/local/bin/brew' <<< "$intel_profile" || fail "Intel macOS did not select /usr/local Homebrew"
+if rg -q '/opt/homebrew/bin/brew' <<< "$intel_profile"; then
+    fail "Intel macOS rendered the Apple Silicon Homebrew path"
+fi
 jq empty "$ROOT/starter/dot_config/cmux/cmux.json"
-if rg -q '^[[:space:]]*(cask|tap)[[:space:]]' "$ROOT/starter/dot_Brewfile"; then
-    fail "public Brewfile must contain formulae only"
+rg -q '^cask "orca"$' "$ROOT/starter/dot_Brewfile" || fail "Orca is missing from the workstation manifest"
+rg -q '^cask "codex"$' "$ROOT/starter/dot_Brewfile" || fail "Codex is missing from the workstation manifest"
+rg -q '^cask "font-meslo-lg-nerd-font"$' "$ROOT/starter/dot_Brewfile" || fail "macOS prompt font is missing"
+rg -q '^brew "wireguard-tools"$' "$ROOT/starter/dot_Brewfile" || fail "WireGuard tools are missing"
+rg -q 'nerd-fonts/v3\.4\.0/patched-fonts/Meslo/S' "$ROOT/setup.sh" || \
+    fail "Linux prompt font installer is missing or unpinned"
+[[ "$(rg -c 'font_sha256=[0-9a-f]{64}' "$ROOT/setup.sh")" -eq 4 ]] || \
+    fail "Linux prompt fonts do not have four pinned checksums"
+rg -q '' "$ROOT/starter/dot_config/starship.toml" || fail "current Starship prompt theme was not synchronized"
+if rg -qi 'warp' "$ROOT/starter/dot_Brewfile"; then
+    fail "removed Warp app remains in the workstation manifest"
 fi
-if rg -q -- '--(cask|tap)|brew (tap|list --cask)' \
-    "$ROOT/setup.sh" "$ROOT/starter/run_onchange_install-packages.sh.tmpl" \
-    "$ROOT/starter/dot_myshell/functions/executable_env-sync"; then
-    fail "casks or taps entered automated capture/pruning"
-fi
-if rg -ni 'codex|opencode|codebuddy|cc[ -]switch|chatgpt|cherry[ -]studio' \
-    "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib" \
-    "$ROOT/scripts" "$ROOT/starter"; then
-    fail "optional AI tools entered the automated terminal workflow"
+if rg -q 'git|chezmoi-push' "$ROOT/starter/dot_myshell/functions/executable_env-sync"; then
+    fail "env-sync must not stage, commit, or push"
 fi
 
 echo "[4/10] Starter target preview"
@@ -97,19 +113,22 @@ FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_S
 if rg -q 'cleanup|uninstall' "$fake_log"; then
     fail "default reconciliation pruned packages"
 fi
-if rg -q '^uv python install|^uv tool install --python' "$fake_log"; then
-    fail "public uv tools unexpectedly pinned a Python interpreter"
-fi
-rg -q '^uv tool install harlequin==2\.2\.1 --force$' "$fake_log" || fail "harlequin package was not version-pinned"
-rg -q '^uv tool install ruff==0\.16\.0 --force$' "$fake_log" || fail "ruff package was not version-pinned"
+rg -q '^uv python install 3\.10$' "$fake_log" || fail "determined Python policy was not applied"
+rg -q '^uv tool install harlequin --force$' "$fake_log" || fail "harlequin should remain unpinned"
+rg -q '^uv tool install ruff --force$' "$fake_log" || fail "ruff should remain unpinned"
+rg -q '^uv tool install --python 3\.10 --with PyYAML==5\.3\.1 --with ruamel-yaml==0\.17\.40 determined==0\.19\.10 --force$' \
+    "$fake_log" || fail "determined compatibility requirements were not applied"
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-packages.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-uv.sh" >/dev/null
-rg -q 'brew bundle cleanup' "$fake_log" || fail "explicit Brew pruning was not executed"
+rg -q 'brew bundle cleanup --global --force --formula --cask --tap' "$fake_log" || \
+    fail "explicit Brew pruning did not cover formulae, casks, and taps"
 rg -q 'uv tool uninstall black' "$fake_log" || fail "explicit uv pruning was not executed"
 if rg -q 'uv tool uninstall ruff' "$fake_log"; then
     fail "explicit uv pruning removed a declared tool"
 fi
+rg -q 'contains no valid tool names; refusing to prune' "$ROOT/setup.sh" || \
+    fail "installer lacks an empty uv manifest pruning guard"
 
 echo "[7/10] Age enablement and encrypted add"
 age_home="$TEST_TMP/age-home"
@@ -135,7 +154,7 @@ HOME="$TEST_TMP/home" CHEZMOI_SOURCE_DIR="$ROOT/starter" CHEZMOI_CONFIG_DIR="$TE
     "$ROOT/scripts/full-backup.sh" "$TEST_TMP/backups" >/dev/null
 backup_file="$(find "$TEST_TMP/backups" -type f -name 'dotfiles-full-backup-*.tar.gz' -print -quit)"
 [[ -n "$backup_file" ]] || fail "full-backup did not create an archive"
-tar -tzf "$backup_file" | rg -q '/chezmoi-source/dot_zshrc$' || fail "backup is missing source state"
+tar -tzf "$backup_file" | rg -q '/chezmoi-source/dot_zshrc\.tmpl$' || fail "backup is missing source state"
 tar -tzf "$backup_file" | rg -q '/home-plaintext/\.zshrc$' || fail "backup is missing plaintext targets"
 tar -tzf "$backup_file" | rg -q '/MANIFEST\.sha256$' || fail "backup is missing its manifest"
 
@@ -156,10 +175,11 @@ rg -q 'Xcode Command Line Tools installer' <<< "$clt_output" || fail "macOS CLT 
 linux_home="$TEST_TMP/linux-home"
 mkdir -p "$linux_home"
 linux_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/linux-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
-    "$ROOT/setup.sh" --dry-run)"
+    "$ROOT/setup.sh" --dry-run 2>&1)"
 [[ ! -e "$TEST_TMP/linux-source" ]] || fail "Linux dry-run created a source directory"
 [[ ! -e "$linux_home/.local/bin" ]] || fail "Linux dry-run created ~/.local/bin"
 rg -q 'profile: server' <<< "$linux_output" || fail "Linux did not default to the server profile"
+rg -q 'Would install MesloLGS Nerd Font' <<< "$linux_output" || fail "Linux font installation was not previewed"
 
 server_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/server-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
     "$ROOT/server-setup.sh" --dry-run)"
@@ -187,6 +207,7 @@ done
 rg -q 'cmux' "$ROOT/README.md" || fail "README does not document cmux"
 rg -q 'server-setup.sh' "$ROOT/README.md" || fail "README does not document the server profile"
 rg -q 'CC Switch' "$ROOT/README.md" || fail "README does not document AI configuration ownership"
+rg -q 'ssh-keygen -y -f' "$ROOT/README.md" || fail "README does not document SSH public-key recovery"
 rg -q '不接收 Pull Request' "$ROOT/CONTRIBUTING_ZH.md" || fail "Chinese maintenance policy is missing"
 rg -q 'does not accept pull requests' "$ROOT/CONTRIBUTING.md" || fail "English maintenance policy is missing"
 

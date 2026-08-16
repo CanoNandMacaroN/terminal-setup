@@ -28,7 +28,7 @@ Usage: ./setup.sh [options]
 Options:
   --repo URL            Bootstrap an existing chezmoi repository.
   --age-key-file PATH   Import an age identity before applying dotfiles.
-  --prune               Remove undeclared Brew formulae/uv tools; never casks.
+  --prune               Remove undeclared Brew formulae, casks, taps, and uv tools.
   --skip-shell-change   Do not make Zsh the login shell.
   --dry-run             Print actions without changing the machine.
   -h, --help            Show this help.
@@ -94,18 +94,64 @@ install_homebrew() {
         return
     fi
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if [[ -x /opt/homebrew/bin/brew ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [[ -x /usr/local/bin/brew ]]; then
-        eval "$(/usr/local/bin/brew shellenv)"
+    case "$(detect_arch)" in
+        arm64)
+            [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
+            ;;
+        x86_64)
+            [[ -x /usr/local/bin/brew ]] && eval "$(/usr/local/bin/brew shellenv)"
+            ;;
+        *)
+            die "Unsupported macOS architecture: $(uname -m)"
+            ;;
+    esac
+}
+
+install_linux_starship_font() {
+    local font_dir font_temp_dir font_base font_variant font_style font_file font_sha256
+    font_dir="${XDG_DATA_HOME:-$HOME/.local/share}/fonts/MesloLGS-NF"
+    if find "$font_dir" -maxdepth 1 -type f -name 'MesloLGSNerdFont-*.ttf' -print -quit 2>/dev/null | grep -q .; then
+        success "MesloLGS Nerd Font already installed"
+        return
     fi
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        warn "Would install MesloLGS Nerd Font for the Starship prompt"
+        return
+    fi
+
+    font_temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/terminal-setup-font.XXXXXX")"
+    font_base="https://raw.githubusercontent.com/ryanoasis/nerd-fonts/v3.4.0/patched-fonts/Meslo/S"
+    for font_variant in Regular:Regular Bold:Bold Italic:Italic Bold-Italic:BoldItalic; do
+        font_style=${font_variant%%:*}
+        font_file="MesloLGSNerdFont-${font_variant#*:}.ttf"
+        case "$font_file" in
+            MesloLGSNerdFont-Regular.ttf) font_sha256=44ae9b687639c1529ecd01e5d0ae8d98f3b30cb20b02bbe4e6d9fb474c8dee36 ;;
+            MesloLGSNerdFont-Bold.ttf) font_sha256=9799788a96066045c3f53f2e5bcbe376c6b9adb9514e3276cc84ac42d8b176d0 ;;
+            MesloLGSNerdFont-Italic.ttf) font_sha256=3dede17df16e62abdae99ea7f13a14cbc391e2cc9429c8dfa1b5349e78758e9c ;;
+            MesloLGSNerdFont-BoldItalic.ttf) font_sha256=734956444bc02c8ea0e7f7effe46c616f2e492734c6afe91049e4735d522542c ;;
+            *) die "Unexpected font file: $font_file" ;;
+        esac
+        curl -fsSL "$font_base/$font_style/$font_file" -o "$font_temp_dir/$font_file"
+        printf '%s  %s\n' "$font_sha256" "$font_temp_dir/$font_file" | sha256sum -c - >/dev/null ||
+            die "Checksum verification failed for $font_file"
+    done
+    mkdir -p "$font_dir"
+    install -m 644 "$font_temp_dir"/MesloLGSNerdFont-*.ttf "$font_dir/"
+    rm -f -- "$font_temp_dir"/MesloLGSNerdFont-*.ttf
+    rmdir "$font_temp_dir"
+
+    find "$font_dir" -maxdepth 1 -type f -name 'MesloLGSNerdFont-*.ttf' -print -quit | grep -q . ||
+        die "MesloLGS Nerd Font archive did not contain the expected files"
+    command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$font_dir" >/dev/null 2>&1 || true
+    success "MesloLGS Nerd Font installed for the Starship prompt"
 }
 
 install_linux_prerequisites() {
     local package
     run sudo apt-get update
     run sudo apt-get install -y \
-        ca-certificates curl git openssh-client rsync zsh build-essential unzip \
+        ca-certificates curl git openssh-client rsync zsh build-essential \
         jq fzf ripgrep fd-find bat tmux
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -166,6 +212,8 @@ install_linux_prerequisites() {
             export PATH="$HOME/.local/share/fnm:$PATH"
         fi
     fi
+
+    install_linux_starship_font
 }
 
 install_prerequisites() {
@@ -334,7 +382,7 @@ apply_dotfiles() {
         return
     fi
 
-    [[ "$PRUNE" -eq 0 ]] || warn "Manifest pruning enabled: undeclared Brew formulae and uv tools may be removed"
+    [[ "$PRUNE" -eq 0 ]] || warn "Manifest pruning enabled: undeclared Brew entries and uv tools may be removed"
     TERMINAL_SETUP_PRUNE=0 chezmoi -S "$SOURCE_DIR" apply
     chezmoi -S "$SOURCE_DIR" verify
     success "Chezmoi target state verified"
@@ -346,14 +394,27 @@ prune_manifests() {
     section "Manifest pruning"
 
     if [[ "$(uname -s)" == Darwin && -f "$HOME/.Brewfile" ]] && command -v brew >/dev/null 2>&1; then
-        warn "Removing top-level Homebrew formulae not declared by ~/.Brewfile; casks remain unmanaged"
-        HOMEBREW_NO_AUTO_UPDATE=1 brew bundle cleanup --global --force --formula
+        warn "Removing Homebrew formulae, casks, and taps not declared by ~/.Brewfile"
+        HOMEBREW_NO_AUTO_UPDATE=1 brew bundle cleanup --global --force --formula --cask --tap
     fi
 
-    if command -v uv >/dev/null 2>&1 && [[ -f "$HOME/.myshell/uv_tools.list" ]]; then
+    if command -v uv >/dev/null 2>&1 && [[ -f "$HOME/.myshell/uv-tools.toml" ]]; then
         desired_file="$(mktemp "${TMPDIR:-/tmp}/terminal-setup-uv-desired.XXXXXX")"
         current_file="$(mktemp "${TMPDIR:-/tmp}/terminal-setup-uv-current.XXXXXX")"
-        sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "$HOME/.myshell/uv_tools.list" | LC_ALL=C sort -u > "$desired_file"
+        awk '
+            $0 == "[[tool]]" { in_tool=1; next }
+            in_tool && /^name = "/ {
+                value=$0
+                sub(/^name = "/, "", value)
+                sub(/"$/, "", value)
+                print value
+                in_tool=0
+            }
+        ' "$HOME/.myshell/uv-tools.toml" | LC_ALL=C sort -u > "$desired_file"
+        if [[ ! -s "$desired_file" ]]; then
+            rm -f -- "$desired_file" "$current_file"
+            die "uv-tools.toml contains no valid tool names; refusing to prune"
+        fi
         uv tool list | awk 'NF && $1 != "-" { print $1 }' | LC_ALL=C sort -u > "$current_file"
         while IFS= read -r tool; do
             [[ -n "$tool" ]] || continue
@@ -408,5 +469,5 @@ success "Terminal setup completed"
 info "Run ./doctor.sh for a detailed health check"
 if [[ -z "$DOTFILES_REPO" ]]; then
     info "Your local starter source is at $SOURCE_DIR"
-    info "Add your own private Git remote before using env-sync"
+    info "Add your own private Git remote before publishing this source"
 fi

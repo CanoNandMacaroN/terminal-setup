@@ -2,7 +2,7 @@
 
 A terminal environment bootstrap for new machines. It installs the required command-line tools, uses chezmoi to write configuration into Home, and keeps the environment aligned through package manifests.
 
-The default starter is public, credential-free, and ready to use. GUI applications, editors, and AI tools are not installed automatically; add them after the base terminal environment is ready.
+The default starter is public, credential-free, and ready to use. The macOS workstation profile installs the currently maintained CLI, GUI, and AI tools from its Brewfile. Linux/WSL applies only the portable terminal layer and never runs macOS casks.
 
 **[中文文档](README.md) · [Security policy](SECURITY.md) · [Maintenance policy](CONTRIBUTING.md)**
 
@@ -141,6 +141,27 @@ chezmoi init --apply git@github.com:your-account/your-dotfiles-repository.git
 
 That command restores dotfiles only. `setup.sh --repo` additionally handles platform dependencies, package manifests, backups, Node/pnpm, and final verification.
 
+### Restore an SSH private key and derive its public key
+
+SSH private keys do not belong in chezmoi or Git. Restore them separately from a password manager, hardware token, or controlled offline backup. When you intentionally reuse the same private key on a new machine, derive its public key after restoring it:
+
+```sh
+install -d -m 700 ~/.ssh
+install -m 600 /path/from/password-manager/id_ed25519 ~/.ssh/id_ed25519
+ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+chmod 644 ~/.ssh/id_ed25519.pub
+ssh-keygen -lf ~/.ssh/id_ed25519.pub
+```
+
+`ssh-keygen -y` derives the matching public key; it does not create a new identity. After checking the fingerprint, load it with:
+
+```sh
+set-ssh-key id_ed25519
+ssh-add -l
+```
+
+When the target machine should have its own identity, generate a new key there and register only its public key. Never add a private key to the public starter.
+
 ## Debian, Ubuntu, WSL, or a Linux Server
 
 Install the three packages required to download the repository:
@@ -207,10 +228,11 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 | Git, chezmoi, jq, ripgrep, fd, bat | Yes | Yes |
 | fnm-managed Node LTS, Corepack, pnpm | Yes | Yes |
 | uv and an uv tool manifest | Yes | Yes |
-| Homebrew Formula manifest | Yes | Not applied |
+| Homebrew Formula/Cask/Tap manifest | Yes | Not applied |
+| MesloLGS Nerd Font | Installed by Brew cask | Only the font required by Starship |
 | SSH, rsync, tmux | System/optional | Installed |
 | cmux/Ghostty configuration | Retained | cmux ignored; Ghostty retained |
-| GUI apps, casks, and AI tools | Not installed | Not installed |
+| GUI apps, casks, and AI tools | Installed from Brewfile | Not applied |
 
 ### Terminal and CLI choices
 
@@ -226,9 +248,15 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 | fnm and Corepack | Node versions and project-owned pnpm versions |
 | uv | Python tools and isolated runtimes |
 
-The public source retains generic cmux and Ghostty configuration but installs neither app. cmux builds on Ghostty's terminal capabilities with workspaces, panes, ports, and agent-session organization; it is an optional workflow entry point.
+### Starship and fonts
 
-AI tools are documentation-only. Codex, OpenCode, CodeBuddy, CC Switch, ChatGPT, and Cherry Studio can be added independently. Model configuration that CC Switch can manage and cloud-sync should remain owned by CC Switch; private exceptions belong in a private age-enabled chezmoi source.
+The current Starship theme uses Nerd Font glyphs. macOS installs the complete Meslo font through the `font-meslo-lg-nerd-font` cask. Linux/WSL downloads and verifies only four `MesloLGS Nerd Font` files from a pinned Nerd Fonts release into the user font directory; it does not copy macOS applications or unrelated font families. Select `MesloLGS NF` or `MesloLGS Nerd Font` in the terminal, otherwise prompt symbols may render as boxes.
+
+`doctor.sh` checks that the font files exist. Fonts affect presentation only; they do not change shell, Git, or package-manifest behavior.
+
+The public source retains generic cmux and Ghostty configuration and installs cmux from the macOS Brewfile. cmux builds on Ghostty's terminal capabilities with workspaces, panes, ports, and agent-session organization; it is one workstation entry point.
+
+The macOS manifest currently installs Codex, CodeBuddy, CC Switch, and related clients, but the starter contains no accounts, tokens, or model-provider configuration. Configuration that CC Switch can cloud-sync remains owned by CC Switch; private exceptions belong in an age-enabled private chezmoi source.
 
 ## How It Works
 
@@ -278,10 +306,10 @@ The Homebrew and uv manifests have both a Home target state and a chezmoi source
 | Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
 | uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
 
-When `env-sync` runs inside an initialized chezmoi repository, it reads the current Brew/uv installations, updates the target manifests under Home, captures them back into the local chezmoi source with `chezmoi add`, then stages, commits, and pushes only the corresponding source files:
+When `env-sync` runs inside an initialized chezmoi repository, it reads the current Brew/uv installations, updates the target manifests under Home, and captures them back into the local chezmoi source with `chezmoi add`. It never stages, commits, or pushes:
 
 ```text
-installed state → env-sync → Home target manifests → chezmoi add → chezmoi source manifests → Git
+installed state → env-sync → Home target manifests → chezmoi add → chezmoi source manifests
 ```
 
 Recovery and normal application use the opposite direction. `chezmoi apply` writes the Home target manifests from source, then the `run_onchange` hooks invoke Brew and uv to install missing tools:
@@ -318,9 +346,9 @@ On a server:
 ./server-setup.sh --prune
 ```
 
-Pruning affects Brew Formulae and uv tools only, never casks.
+Pruning affects Brew Formulae, casks, taps, and uv tools. It uninstalls undeclared entries, so use it only after reviewing the manifest difference.
 
-The public starter uses `~/.myshell/uv-tools.toml` to pin tool package versions and optional extra dependencies without pinning Python; uv selects a compatible interpreter for each tool. It includes `ruff` for fast Python linting and formatting, and `harlequin` for browsing and querying local databases from the terminal. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
+The public starter uses `~/.myshell/uv-tools.toml` to preserve installation constraints. It currently includes `determined` with a Python 3.10 compatibility environment, plus unpinned `ruff` and `harlequin` tools. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
 
 ## Node and pnpm Ownership
 
@@ -365,20 +393,20 @@ chezmoi apply
 chezmoi verify
 ```
 
-Capture top-level Formulae and uv tools back into the manifests:
+Capture taps, top-level Formulae, casks, and uv tools into the local chezmoi source manifests:
 
 ```sh
-env-sync "chore: sync package manifests"
+env-sync
 ```
 
-macOS does not capture Taps or casks. Linux/WSL captures uv only. The function reads uv tool receipts to capture pinned versions and extra dependencies into `uv-tools.toml`; it stages only those manifests, stops when unpushed commits exist, and avoids empty commits.
+Linux/WSL captures uv only. The function reads uv tool receipts to preserve declared version constraints, extra dependencies, and existing Python policy in `uv-tools.toml`. It updates Home and local chezmoi source state only; publishing remains a separate Git operation.
 
 Complete public installer options:
 
 ```text
 --repo URL            use an existing chezmoi repository
 --age-key-file PATH   import an age identity
---prune               remove undeclared Formulae/uv tools, never casks
+--prune               remove undeclared Formulae, casks, taps, and uv tools
 --skip-shell-change   preserve the current login shell
 --dry-run             preview only
 ```
@@ -389,7 +417,7 @@ Complete public installer options:
 ./scripts/full-backup.sh /path/to/private/backup-directory
 ```
 
-The archive contains the full source and Git state, decrypted managed targets, local chezmoi configuration, the age identity, status snapshots, and a SHA-256 manifest.
+The archive contains the full source and Git state, decrypted managed targets, local chezmoi configuration, the age identity, status snapshots, and a SHA-256 manifest. SSH private keys that are not managed by chezmoi are not included and require a separate secure backup.
 
 It is intentionally unencrypted and must remain on a private NAS, offline disk, or another controlled location. Never upload it to a public repository.
 

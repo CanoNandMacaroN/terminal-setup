@@ -2,7 +2,7 @@
 
 一套面向全新电脑的终端环境初始化工具。它会安装必要的命令行工具，用 chezmoi 把配置写入 Home，并通过软件清单持续维护环境。
 
-默认配置公开、无凭据、可直接使用。GUI 应用、编辑器和 AI 工具不自动安装，你可以在基础终端环境完成后自行选择。
+默认配置公开、无凭据、可直接使用。macOS 工作站会按 Brewfile 安装当前维护的 CLI、GUI 和 AI 工具；Linux/WSL 只应用跨平台终端层，不执行 macOS Cask。
 
 **[English](README_EN.md) · [安全策略中文版](SECURITY_ZH.md) · [维护边界](CONTRIBUTING_ZH.md)**
 
@@ -141,6 +141,27 @@ chezmoi init --apply git@github.com:你的账号/你的dotfiles仓库.git
 
 这条短命令只负责 dotfiles；本项目的 `setup.sh --repo` 还会处理平台依赖、软件清单、备份、Node/pnpm 和最终验证。
 
+### 恢复 SSH 私钥并重建公钥
+
+SSH 私钥不进入 chezmoi 或 Git。应从密码管理器、硬件密钥或受控离线备份单独恢复；如果你明确需要在新机器复用同一把私钥，可以在恢复私钥后重新导出对应公钥：
+
+```sh
+install -d -m 700 ~/.ssh
+install -m 600 /path/from/password-manager/id_ed25519 ~/.ssh/id_ed25519
+ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+chmod 644 ~/.ssh/id_ed25519.pub
+ssh-keygen -lf ~/.ssh/id_ed25519.pub
+```
+
+`ssh-keygen -y` 只从私钥推导公钥，不会生成新身份。确认指纹后可载入该身份：
+
+```sh
+set-ssh-key id_ed25519
+ssh-add -l
+```
+
+目标机器应保留自己的私钥时，则在该机器新建密钥并只登记新公钥；不要为了方便而把私钥加入公共 starter。
+
 ## Debian、Ubuntu、WSL 或 Linux 服务器
 
 服务器需要先具备下载本仓库所需的三个基础包：
@@ -207,10 +228,11 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 | Git、chezmoi、jq、ripgrep、fd、bat | 是 | 是 |
 | fnm 管理的 Node LTS、Corepack、pnpm | 是 | 是 |
 | uv 与 uv 工具清单 | 是 | 是 |
-| Homebrew Formula 清单 | 是 | 不应用 |
+| Homebrew Formula/Cask/Tap 清单 | 是 | 不应用 |
+| MesloLGS Nerd Font | Brew Cask 安装 | 仅安装 Starship 所需字体 |
 | SSH、rsync、tmux | 系统/可选 | 安装 |
 | cmux/Ghostty 配置 | 保留 | cmux 忽略，Ghostty 配置保留 |
-| GUI、Cask、AI 工具 | 不自动安装 | 不自动安装 |
+| GUI、Cask、AI 工具 | 按 Brewfile 安装 | 不应用 |
 
 ### 终端与 CLI 选择
 
@@ -226,9 +248,15 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 | fnm + Corepack | Node 版本和项目 pnpm 版本所有权 |
 | uv | Python 工具和隔离运行环境 |
 
-公共配置保留 cmux 和 Ghostty 的通用设置，但不安装应用。cmux 基于 Ghostty 的终端能力并增加工作区、分栏、端口和 agent 会话组织；它是可选工作流入口。
+### Starship 与字体
 
-AI 工具同样只在文档中说明，不自动安装。Codex、OpenCode、CodeBuddy、CC Switch、ChatGPT、Cherry Studio 等可以自行添加。CC Switch 能管理和云同步的模型配置应继续由它负责；私人例外应进入启用了 age 的私人 chezmoi 仓库。
+当前 Starship 主题使用 Nerd Font 图标。macOS 通过 `font-meslo-lg-nerd-font` Cask 安装完整 Meslo 字体；Linux/WSL 只从固定版本下载并校验四个 `MesloLGS Nerd Font` 字体文件到用户字体目录，不复制 macOS 应用或其他字体包。终端应选择 `MesloLGS NF`/`MesloLGS Nerd Font`，否则提示符图标可能显示为方框。
+
+`doctor.sh` 会检查字体文件是否存在。字体只影响显示，不改变 Shell、Git 或软件清单行为。
+
+公共配置保留 cmux 和 Ghostty 的通用设置，并在 macOS 上按 Brewfile 安装 cmux。cmux 基于 Ghostty 的终端能力并增加工作区、分栏、端口和 agent 会话组织；它是工作站流程入口之一。
+
+macOS 清单当前安装 Codex、CodeBuddy、CC Switch 等客户端，但 starter 不包含账号、Token 或模型供应商配置。CC Switch 能管理和云同步的模型配置继续由它负责；无法同步的私人例外应进入启用了 age 的私人 chezmoi 仓库。
 
 ## 它是怎样工作的
 
@@ -280,10 +308,10 @@ Homebrew 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
 | Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
 | uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
 
-在已经初始化的 chezmoi 仓库中运行 `env-sync` 时，它读取当前 Brew/uv 安装状态，先更新 Home 中的目标清单，再通过 `chezmoi add` 把清单收回本机 chezmoi 源目录，最后只暂存对应源文件并提交、推送：
+在已经初始化的 chezmoi 仓库中运行 `env-sync` 时，它读取当前 Brew/uv 安装状态，先更新 Home 中的目标清单，再通过 `chezmoi add` 把清单收回本机 chezmoi 源目录。它不会暂存、提交或推送：
 
 ```text
-当前安装状态 → env-sync → Home 目标清单 → chezmoi add → chezmoi 源清单 → Git
+当前安装状态 → env-sync → Home 目标清单 → chezmoi add → chezmoi 源清单
 ```
 
 在新机器恢复或日常应用时，方向相反。`chezmoi apply` 从源目录写出 Home 目标清单，再由 `run_onchange` 钩子调用 Brew 和 uv 补齐工具：
@@ -320,9 +348,9 @@ chezmoi 记录渲染后脚本的状态：
 ./server-setup.sh --prune
 ```
 
-清理范围只包括 Brew Formula 和 uv 工具，不处理 Cask。
+清理范围包括 Brew Formula、Cask、Tap 和 uv 工具。该操作会卸载清单外项目，因此只在明确检查过差异后使用。
 
-公共 starter 使用 `~/.myshell/uv-tools.toml` 固定工具包版本和可选附加依赖，但不固定 Python；uv 会为每个工具自行选择兼容解释器。默认包含 `ruff`：用于快速的 Python 检查和格式化；以及 `harlequin`：用于在终端浏览和查询本地数据库。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
+公共 starter 使用 `~/.myshell/uv-tools.toml` 保存工具安装约束。当前包含需要 Python 3.10 兼容环境的 `determined`，以及不锁包版本和解释器的 `ruff`、`harlequin`。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
 
 ## Node 与 pnpm 的边界
 
@@ -367,20 +395,20 @@ chezmoi apply
 chezmoi verify
 ```
 
-把本机顶层 Formula 和 uv 工具写回清单：
+把本机 Tap、顶层 Formula、Cask 和 uv 工具写回本地 chezmoi 源清单：
 
 ```sh
-env-sync "chore: sync package manifests"
+env-sync
 ```
 
-macOS 不采集 Tap/Cask；Linux/WSL 只采集 uv。该函数从 uv tool receipt 采集固定版本和额外依赖，生成 `uv-tools.toml`；只暂存对应清单，有未推送提交时会停止，无变化时不会创建空提交。
+Linux/WSL 只采集 uv。该函数从 uv tool receipt 保留安装时声明的版本约束、额外依赖和已有 Python 策略，生成 `uv-tools.toml`；它只更新 Home 与 chezmoi 源状态，发布仍是单独的 Git 操作。
 
 安装器的完整公开选项：
 
 ```text
 --repo URL            使用已有 chezmoi 仓库
 --age-key-file PATH   导入 age identity
---prune               清理清单外 Formula/uv 工具，不处理 Cask
+--prune               清理清单外 Formula、Cask、Tap 和 uv 工具
 --skip-shell-change   不修改登录 Shell
 --dry-run             只预览
 ```
@@ -391,7 +419,7 @@ macOS 不采集 Tap/Cask；Linux/WSL 只采集 uv。该函数从 uv tool receipt
 ./scripts/full-backup.sh /path/to/private/backup-directory
 ```
 
-归档包含完整源目录与 Git 状态、解密后的 managed targets、本机 chezmoi 配置、age identity、状态快照和 SHA-256 清单。
+归档包含完整源目录与 Git 状态、解密后的 managed targets、本机 chezmoi 配置、age identity、状态快照和 SHA-256 清单。未受 chezmoi 管理的 SSH 私钥不在其中，必须另行安全备份。
 
 它故意不加密，只能保存到私人 NAS、离线磁盘或其他受控位置，绝不能上传到公共仓库。
 

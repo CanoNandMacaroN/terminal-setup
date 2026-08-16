@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The rendered hash changes this script whenever the Brewfile changes.
 # Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
 
-if [[ "$(uname -s)" != Darwin ]]; then
-    echo "The Homebrew formula manifest is managed only on macOS; skipping it on this platform."
+{{ if ne .chezmoi.os "darwin" -}}
+if true; then
+    echo "The Homebrew manifest is macOS-only; skipping it on this platform."
     exit 0
 fi
+{{ end -}}
 
 if ! command -v brew >/dev/null 2>&1; then
-    for brew_path in /opt/homebrew/bin/brew /usr/local/bin/brew; do
-        if [[ -x "$brew_path" ]]; then
-            eval "$("$brew_path" shellenv)"
-            break
-        fi
-    done
+{{ if eq .chezmoi.arch "arm64" -}}
+    brew_path=/opt/homebrew/bin/brew
+{{ else if eq .chezmoi.arch "amd64" -}}
+    brew_path=/usr/local/bin/brew
+{{ else -}}
+    echo "Unsupported macOS architecture: {{ .chezmoi.arch }}" >&2
+    exit 1
+{{ end -}}
+    [[ ! -x "$brew_path" ]] || eval "$("$brew_path" shellenv)"
 fi
 
 command -v brew >/dev/null 2>&1 || {
@@ -26,8 +32,8 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 brew bundle install --global --no-upgrade
 
 if [[ "${TERMINAL_SETUP_PRUNE:-0}" == 1 ]]; then
-    echo "Pruning top-level Homebrew formulae not declared by the Brewfile."
-    brew bundle cleanup --global --force --formula
+    echo "Pruning Homebrew formulae, casks, and taps not declared by the Brewfile."
+    brew bundle cleanup --global --force --formula --cask --tap
 else
-    echo "Pruning disabled. Re-run setup with --prune to remove undeclared Homebrew formulae."
+    echo "Pruning disabled. Re-run setup with --prune to remove undeclared Homebrew entries."
 fi

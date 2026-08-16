@@ -56,13 +56,23 @@ for command_name in git curl chezmoi zsh; do
 done
 
 section "Workflow tools"
-if has_cmd fnm; then
-    eval "$(fnm env --shell bash)" 2>/dev/null || true
-    fnm use --silent-if-unchanged default >/dev/null 2>&1 || true
-fi
 for command_name in starship fnm node corepack pnpm uv fzf zoxide jq rg fd bat lazygit yazi; do
     check_optional "$command_name"
 done
+
+section "Prompt font"
+if [[ "$platform" == macos ]]; then
+    font_root="$HOME/Library/Fonts"
+else
+    font_root="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
+fi
+if find "$font_root" -type f \( -iname 'MesloLGS*NF*.ttf' -o -iname 'MesloLGSNerdFont-*.ttf' \) \
+    -print -quit 2>/dev/null | grep -q .; then
+    success "MesloLGS Nerd Font: available"
+else
+    warn "MesloLGS Nerd Font: missing; Starship symbols may not render correctly"
+    warnings=$((warnings + 1))
+fi
 
 if [[ "$profile" == server ]]; then
     section "Server tools"
@@ -72,7 +82,7 @@ if [[ "$profile" == server ]]; then
 fi
 
 section "Package manifests"
-for manifest in "$HOME/.myshell/uv_tools.list"; do
+for manifest in "$HOME/.myshell/uv-tools.toml"; do
     if [[ -f "$manifest" ]]; then
         success "$manifest: present"
     else
@@ -94,11 +104,15 @@ section "Chezmoi"
 source_dir="$(chezmoi source-path 2>/dev/null || true)"
 if [[ -n "$source_dir" && -d "$source_dir" ]]; then
     success "source: $source_dir"
-    if chezmoi verify >/dev/null 2>&1; then
-        success "target state verified"
+    if chezmoi verify --exclude scripts >/dev/null 2>&1; then
+        success "managed file state verified"
     else
-        warn "target state differs; inspect with chezmoi status and chezmoi diff"
+        warn "managed files differ; inspect with chezmoi status and chezmoi diff"
         warnings=$((warnings + 1))
+    fi
+    script_status="$(chezmoi status --include scripts 2>/dev/null || true)"
+    if [[ -n "$script_status" ]]; then
+        info "run_onchange scripts are pending and will run on the next full chezmoi apply"
     fi
 
     if find "$source_dir" -type f -name 'encrypted_*.age' -print -quit 2>/dev/null | grep -q .; then
