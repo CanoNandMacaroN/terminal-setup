@@ -21,7 +21,7 @@ If chezmoi is new to you, complete the Fresh Mac or Linux/WSL tutorial first, th
 
 This is the recommended beginner path. You do not need to preinstall Homebrew, chezmoi, Node.js, or each CLI separately.
 
-### Step 1: Install Apple's command-line tools
+### Step 1: Confirm Apple's command-line tools
 
 Open the built-in Terminal app and run:
 
@@ -30,6 +30,8 @@ xcode-select --install
 ```
 
 Wait for the macOS installer to finish before continuing. It provides Git, Clang, make, and the macOS SDK. `/usr/bin/gcc` invokes Apple's Clang-compatible driver, not GNU GCC.
+
+A fresh Mac needs the bundled Git before it can clone this project, so installing the tools manually first is the recommended path. If you obtained the repository another way, you can run `./setup.sh` directly: the script checks Xcode Command Line Tools, opens the same macOS system installer when they are missing, and asks you to rerun it after installation finishes.
 
 ### Step 2: Download this project
 
@@ -56,7 +58,7 @@ Then start the real installation:
 
 The installer will:
 
-1. Check Xcode Command Line Tools.
+1. Check Xcode Command Line Tools; when missing, open the macOS system installer and stop before later steps until installation finishes.
 2. Run Homebrew's official installer when Homebrew is missing.
 3. Install Git, chezmoi, and the generic CLI toolset.
 4. Copy `starter/` into the local chezmoi source state.
@@ -224,6 +226,7 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 
 | Capability | macOS | Linux/WSL |
 |---|---|---|
+| System build tools | Check Xcode Command Line Tools; open the system installer when missing | Install `build-essential` |
 | Zsh, Starship, fzf, zoxide | Yes | Yes |
 | Git, chezmoi, jq, ripgrep, fd, bat | Yes | Yes |
 | fnm-managed Node LTS, Corepack, pnpm | Yes | Yes |

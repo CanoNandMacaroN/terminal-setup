@@ -208,6 +208,10 @@ rg -q 'cmux' "$ROOT/README.md" || fail "README does not document cmux"
 rg -q 'server-setup.sh' "$ROOT/README.md" || fail "README does not document the server profile"
 rg -q 'CC Switch' "$ROOT/README.md" || fail "README does not document AI configuration ownership"
 rg -q 'ssh-keygen -y -f' "$ROOT/README.md" || fail "README does not document SSH public-key recovery"
+rg -q '缺少时自动打开同一个 macOS 系统安装器' "$ROOT/README.md" || \
+    fail "README does not document automatic macOS CLT bootstrap behavior"
+rg -q 'opens the same macOS system installer when they are missing' "$ROOT/README_EN.md" || \
+    fail "English README does not document automatic macOS CLT bootstrap behavior"
 rg -q '不接收 Pull Request' "$ROOT/CONTRIBUTING_ZH.md" || fail "Chinese maintenance policy is missing"
 rg -q 'does not accept pull requests' "$ROOT/CONTRIBUTING.md" || fail "English maintenance policy is missing"
 

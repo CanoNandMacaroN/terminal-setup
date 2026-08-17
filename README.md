@@ -21,7 +21,7 @@
 
 这是推荐的新手路线。你不需要提前安装 Homebrew、chezmoi、Node.js 或逐个安装 CLI。
 
-### 第 1 步：安装 Apple 命令行工具
+### 第 1 步：确认 Apple 命令行工具
 
 打开系统自带的“终端”，运行：
 
@@ -30,6 +30,8 @@ xcode-select --install
 ```
 
 macOS 会弹出安装窗口。等待它完全安装后，再执行下一步。这套工具提供 Git、Clang、make 和 macOS SDK；macOS 中的 `/usr/bin/gcc` 实际调用 Apple Clang，并不是 GNU GCC。
+
+全新 Mac 需要先用这里提供的 Git 下载本项目，因此推荐在克隆前手动安装。如果你已经通过其他方式取得了本仓库，也可以直接运行 `./setup.sh`：脚本会检查 Xcode Command Line Tools，缺少时自动打开同一个 macOS 系统安装器，并提示你在安装完成后重新运行。
 
 ### 第 2 步：下载本项目
 
@@ -56,7 +58,7 @@ cd terminal-setup
 
 脚本会依次完成：
 
-1. 检查 Xcode Command Line Tools。
+1. 检查 Xcode Command Line Tools；缺少时打开 macOS 系统安装器，并在安装完成前停止后续步骤。
 2. 在缺少时调用 Homebrew 官方安装器。
 3. 安装 Git、chezmoi 和通用命令行工具。
 4. 把仓库中的 `starter/` 复制为本机 chezmoi 源状态。
@@ -224,6 +226,7 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 
 | 能力 | macOS | Linux/WSL |
 |---|---|---|
+| 系统编译工具 | 检查 Xcode Command Line Tools；缺少时打开系统安装器 | 安装 `build-essential` |
 | Zsh、Starship、fzf、zoxide | 是 | 是 |
 | Git、chezmoi、jq、ripgrep、fd、bat | 是 | 是 |
 | fnm 管理的 Node LTS、Corepack、pnpm | 是 | 是 |
