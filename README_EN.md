@@ -2,7 +2,7 @@
 
 A terminal environment bootstrap for new machines. It installs the required command-line tools, uses chezmoi to write configuration into Home, and keeps the environment aligned through package manifests.
 
-The default starter is public, credential-free, and ready to use. macOS uses Homebrew; Linux/WSL and native Windows use Pixi global. On Linux, apt owns only system bootstrap dependencies; user-only mode is the exception that reuses existing apt-provided commands. uv owns Python tools and fnm owns Node.js. GUI apps, casks, AI clients, and specialist tools are recommendations only.
+The default starter is public, credential-free, and ready to use. macOS uses Homebrew; Linux/WSL prefer apt and use Pixi global for packages apt cannot provide; native Windows uses Pixi global. uv owns Python tools and fnm owns Node.js. GUI apps, casks, AI clients, and specialist tools are recommendations only.
 
 **[中文文档](README.md) · [Security policy](SECURITY.md) · [Maintenance policy](CONTRIBUTING.md)**
 
@@ -191,7 +191,7 @@ cd terminal-setup
 ./doctor.sh
 ```
 
-The server workflow uses apt only for system bootstrap dependencies such as certificates, Git, SSH, rsync, Zsh, and build tools. It then installs Pixi under `~/.pixi`; Pixi global owns chezmoi, uv, Starship, fnm, and the common CLI baseline. The installer attempts to make Zsh the login shell by default.
+The server workflow first installs manifest packages available through apt, then installs Pixi under `~/.pixi` to fill the remaining CLI baseline. Later chezmoi applies inspect dpkg ownership and continue reusing apt-provided commands, invoking Pixi only for missing tools. The installer attempts to make Zsh the login shell by default.
 
 If the account is not in sudoers, or an administrator has already installed the system dependencies, use user-only mode:
 
@@ -199,7 +199,7 @@ If the account is not in sudoers, or an administrator has already installed the 
 ./server-setup.sh --user-only
 ```
 
-User-only mode does not call `sudo`, run `apt`, or change the login shell. It only requires preinstalled `curl` and `git`. The installer writes a machine-local `~/.terminal-setup/reuse-apt` marker. Later applies check commands with `~/.pixi/bin` removed from PATH and use `dpkg-query` to confirm apt ownership: usable apt-provided commands are reused, while Pixi fills missing CLIs under Home. Running the installer later in normal mode removes the marker and restores uniform Pixi ownership. Zsh autosuggestions and syntax-highlighting are shallow-cloned from each repository's default branch into the user's data directory without pinning a tag.
+User-only mode does not call `sudo`, run `apt`, or change the login shell. It only requires preinstalled `curl` and `git`. Later applies use the same apt-first policy: commands already provided by dpkg are reused, while Pixi fills missing CLIs under Home. Zsh autosuggestions and syntax-highlighting are shallow-cloned from each repository's default branch into the user's data directory without pinning a tag.
 
 Pixi and conda-forge inherit the current shell's `http_proxy`, `https_proxy`, and `no_proxy`. Configure a trusted proxy before setup on restricted networks; do not disable TLS verification.
 
@@ -260,7 +260,7 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 
 | Capability | macOS | Linux/WSL | Native Windows |
 |---|---|---|---|
-| Platform package manager | Homebrew | Pixi global; `--user-only` may reuse apt commands | Pixi global |
+| Platform package manager | Homebrew | apt first, Pixi for gaps; `--user-only` skips apt calls | Pixi global |
 | Bootstrap dependencies | Xcode Command Line Tools | apt or administrator-provided | PowerShell; repository from Git/ZIP |
 | Interactive shell | Zsh | Zsh | PowerShell 7 |
 | Starship, fzf, zoxide | Yes | Yes | Yes |

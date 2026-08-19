@@ -2,7 +2,7 @@
 
 一套面向全新电脑的终端环境初始化工具。它会安装必要的命令行工具，用 chezmoi 把配置写入 Home，并通过软件清单持续维护环境。
 
-默认配置公开、无凭据、可直接使用。macOS 使用 Homebrew；Linux/WSL 和原生 Windows 使用 Pixi global。Linux 的 apt 只负责系统引导依赖，纯用户模式例外地复用 apt 已有命令。uv 专门管理 Python 工具，fnm 专门管理 Node.js。GUI、Cask、AI 客户端和专业工具只列为推荐，不自动安装。
+默认配置公开、无凭据、可直接使用。macOS 使用 Homebrew；Linux/WSL 优先使用 apt，仅在 apt 不可用时由 Pixi global 补齐；原生 Windows 使用 Pixi global。uv 专门管理 Python 工具，fnm 专门管理 Node.js。GUI、Cask、AI 客户端和专业工具只列为推荐，不自动安装。
 
 **[English](README_EN.md) · [安全策略中文版](SECURITY_ZH.md) · [维护边界](CONTRIBUTING_ZH.md)**
 
@@ -191,7 +191,7 @@ cd terminal-setup
 ./doctor.sh
 ```
 
-服务器流程只通过 apt 安装证书、Git、SSH、rsync、Zsh 和编译工具等系统引导依赖。随后把 Pixi 安装到 `~/.pixi`，由 Pixi global 安装 chezmoi、uv、Starship、fnm 和通用 CLI。它默认尝试把 Zsh 设置为登录 Shell。
+服务器流程优先通过 apt 安装清单中可用的证书、Git、SSH、rsync、Zsh 和通用 CLI，再把 Pixi 安装到 `~/.pixi` 并补齐 apt 不提供的工具。后续 chezmoi apply 会根据 dpkg 所有权继续复用 apt 命令，只对缺失项调用 Pixi。它默认尝试把 Zsh 设置为登录 Shell。
 
 如果账号不在 sudoers 中，或者管理员已经代装好系统依赖，可以使用纯用户模式：
 
@@ -199,7 +199,7 @@ cd terminal-setup
 ./server-setup.sh --user-only
 ```
 
-纯用户模式不会调用 `sudo`，不会执行 `apt`，也不会修改登录 Shell。运行前只需确认 `curl` 和 `git` 已存在。安装器会写入本机标记 `~/.terminal-setup/reuse-apt`；后续 apply 会检查排除 `~/.pixi/bin` 后的实际命令，并用 `dpkg-query` 确认其是否由 apt 提供。已有且可执行的 apt 命令直接复用，Pixi 只在 Home 内补齐缺失的 CLI。之后以普通模式运行安装器会删除该标记，恢复 Pixi 统一管理。Zsh autosuggestions 和 syntax-highlighting 会从各自 Git 仓库的默认分支浅克隆到用户数据目录，不锁定 tag。
+纯用户模式不会调用 `sudo`，不会执行 `apt`，也不会修改登录 Shell。运行前只需确认 `curl` 和 `git` 已存在。后续 apply 仍会先检查排除 `~/.pixi/bin` 后的实际命令，并用 `dpkg-query` 确认其是否由 apt 提供：已有且可执行的 apt 命令直接复用，Pixi 只在 Home 内补齐缺失的 CLI。Zsh autosuggestions 和 syntax-highlighting 会从各自 Git 仓库的默认分支浅克隆到用户数据目录，不锁定 tag。
 
 Pixi 和 conda-forge 下载会继承当前 Shell 的 `http_proxy`、`https_proxy` 和 `no_proxy`。受限网络应先导入可信代理再运行安装，不要关闭 TLS 校验。
 
@@ -266,7 +266,7 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 
 | 能力 | macOS | Linux/WSL | 原生 Windows |
 |---|---|---|---|
-| 平台包管理器 | Homebrew | Pixi global；`--user-only` 可复用 apt 命令 | Pixi global |
+| 平台包管理器 | Homebrew | apt 优先，Pixi 补齐；`--user-only` 禁止调用 apt | Pixi global |
 | 系统引导依赖 | Xcode Command Line Tools | apt 或管理员预装 | PowerShell；仓库可由 Git/ZIP 获得 |
 | 交互 Shell | Zsh | Zsh | PowerShell 7 |
 | Starship、fzf、zoxide | 是 | 是 | 是 |

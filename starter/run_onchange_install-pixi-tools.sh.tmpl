@@ -15,7 +15,6 @@ exit 0
 {{ end -}}
 
 manifest="$HOME/.myshell/pixi-tools.toml"
-reuse_apt_marker="${TERMINAL_SETUP_REUSE_APT_FILE:-$HOME/.terminal-setup/reuse-apt}"
 if ! command -v pixi >/dev/null 2>&1; then
     echo "Pixi is required before applying the Linux/WSL CLI manifest." >&2
     exit 1
@@ -47,17 +46,13 @@ while IFS=$'\t' read -r environment package expose platforms; do
             ;;
     esac
     IFS=',' read -r -a exposed_commands <<< "$expose"
-    if [[ -f "$reuse_apt_marker" ]]; then
-        for exposed_command in "${exposed_commands[@]}"; do
-            command_name=${exposed_command%%=*}
-            if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
-                all_from_apt=0
-                break
-            fi
-        done
-    else
-        all_from_apt=0
-    fi
+    for exposed_command in "${exposed_commands[@]}"; do
+        command_name=${exposed_command%%=*}
+        if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
+            all_from_apt=0
+            break
+        fi
+    done
     if [[ "$all_from_apt" -eq 1 ]]; then
         echo "Using apt-provided command(s) for $environment; skipping Pixi."
         continue
@@ -72,4 +67,4 @@ while IFS=$'\t' read -r environment package expose platforms; do
     pixi "${args[@]}"
 done < "$entries_file"
 
-echo "The Pixi CLI baseline is installed; user-only apt reuse and extra environments were preserved."
+echo "The Linux CLI baseline is installed; apt-owned commands were reused and missing tools came from Pixi."

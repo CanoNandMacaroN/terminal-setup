@@ -20,7 +20,6 @@ DOTFILES_REPO=""
 AGE_KEY_FILE=""
 SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi}"
 BACKUP_BASE="${TERMINAL_SETUP_BACKUP_DIR:-$HOME/.terminal-setup/backups}"
-REUSE_APT_MARKER="${TERMINAL_SETUP_REUSE_APT_FILE:-$HOME/.terminal-setup/reuse-apt}"
 SKIP_SHELL_CHANGE=0
 USER_ONLY=0
 PRUNE=0
@@ -169,9 +168,24 @@ install_starship_font() {
 }
 
 install_linux_system_packages() {
+    local manifest="$SCRIPT_DIR/starter/dot_myshell/pixi-tools.toml"
+    local package
+    local -a apt_packages=(ca-certificates curl git openssh-client rsync zsh build-essential)
+    local -a manifest_packages=()
+
     run sudo apt-get update
-    run sudo apt-get install -y \
-        ca-certificates curl git openssh-client rsync zsh build-essential
+    if [[ "$DRY_RUN" -eq 0 && -r "$manifest" && -x "$(command -v apt-cache 2>/dev/null || true)" ]]; then
+        while IFS=$'\t' read -r _ package _ _; do
+            [[ -n "$package" ]] || continue
+            apt-cache show "$package" >/dev/null 2>&1 || continue
+            manifest_packages+=("$package")
+        done < <(terminal_setup_pixi_entries_for_platform "$manifest" linux)
+    fi
+    for package in "${manifest_packages[@]}"; do
+        [[ " ${apt_packages[*]} " == *" $package "* ]] || apt_packages+=("$package")
+    done
+
+    run sudo apt-get install -y "${apt_packages[@]}"
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
         warn "Would install Zsh plugins when available"
@@ -207,18 +221,16 @@ install_pixi_bootstrap_tool() {
     shift 2
     mappings=("$@")
 
-    if [[ "$USER_ONLY" -eq 1 ]]; then
-        for mapping in "${mappings[@]}"; do
-            command_name=${mapping%%=*}
-            if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
-                all_from_apt=0
-                break
-            fi
-        done
-        if [[ "$all_from_apt" -eq 1 ]]; then
-            success "Using apt-provided command(s) for $environment"
-            return
+    for mapping in "${mappings[@]}"; do
+        command_name=${mapping%%=*}
+        if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
+            all_from_apt=0
+            break
         fi
+    done
+    if [[ "$all_from_apt" -eq 1 ]]; then
+        success "Using apt-provided command(s) for $environment"
+        return
     fi
 
     args=(global install --environment "$environment")
@@ -254,17 +266,6 @@ zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git
 EOF
 }
 
-configure_linux_package_policy() {
-    [[ "$PLATFORM" == debian || "$PLATFORM" == wsl ]] || return 0
-    [[ "$DRY_RUN" -eq 0 ]] || return 0
-    mkdir -p "$(dirname "$REUSE_APT_MARKER")"
-    if [[ "$USER_ONLY" -eq 1 ]]; then
-        touch "$REUSE_APT_MARKER"
-    else
-        rm -f -- "$REUSE_APT_MARKER"
-    fi
-}
-
 install_linux_user_tools() {
     run mkdir -p "$HOME/.local/bin"
     export PATH="$HOME/.local/bin:$HOME/.local/share/fnm:$HOME/.pixi/bin:$PATH"
@@ -273,9 +274,9 @@ install_linux_user_tools() {
     info "Ensuring core terminal tools through Pixi"
     if [[ "$DRY_RUN" -eq 1 ]]; then
         if [[ "$USER_ONLY" -eq 1 ]]; then
-            warn "Would reuse apt-provided commands and bootstrap remaining core tools through Pixi"
+            warn "Would reuse installed apt commands and bootstrap missing core tools through Pixi"
         else
-            warn "Would bootstrap core terminal tools through Pixi"
+            warn "Would install apt-available CLI packages, then bootstrap remaining tools through Pixi"
         fi
     else
         install_pixi_bootstrap_tool chezmoi chezmoi chezmoi=chezmoi
@@ -567,7 +568,6 @@ initialize_node() {
 }
 
 install_prerequisites
-configure_linux_package_policy
 configure_default_shell
 initialize_source
 

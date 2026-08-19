@@ -205,8 +205,9 @@ rg -q '^pixi global install --environment ripgrep --expose rg=rg ripgrep$' "$fak
     fail "Pixi did not install the ripgrep environment"
 rg -q '^pixi global install --environment tmux --expose tmux=tmux tmux$' "$fake_log" || \
     fail "Pixi did not install the Linux-only tmux environment"
-rg -q '^pixi global install --environment jq --expose jq=jq jq$' "$fake_log" || \
-    fail "normal Linux reconciliation did not keep jq in the Pixi pipeline"
+if rg -q '^pixi global install --environment jq ' "$fake_log"; then
+    fail "normal Linux reconciliation duplicated an apt-owned jq command"
+fi
 if rg -q '^pixi global install --environment git ' "$fake_log"; then
     fail "Linux installed the Windows-only Git Pixi environment"
 fi
@@ -215,8 +216,6 @@ if rg -q 'determined|harlequin|uv python install' "$fake_log"; then
 fi
 
 reuse_apt_log="$TEST_TMP/reuse-apt.log"
-mkdir -p "$fake_home/.terminal-setup"
-touch "$fake_home/.terminal-setup/reuse-apt"
 FAKE_LOG="$reuse_apt_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" \
     TERMINAL_SETUP_PRUNE=0 "$TEST_TMP/install-pixi.sh" >/dev/null
 if rg -q '^pixi global install --environment jq ' "$reuse_apt_log"; then
@@ -294,11 +293,8 @@ linux_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/linux-source" T
 rg -q 'profile: server' <<< "$linux_output" || fail "Linux did not default to the server profile"
 rg -q 'Would install MesloLGS Nerd Font' <<< "$linux_output" || fail "Linux font installation was not previewed"
 rg -q 'Would install Pixi into' <<< "$linux_output" || fail "Linux Pixi installation was not previewed"
-rg -q 'Would bootstrap core terminal tools through Pixi' <<< "$linux_output" || \
-    fail "normal Linux dry-run did not keep the CLI baseline in Pixi"
-if rg -q 'reuse apt-provided commands' <<< "$linux_output"; then
-    fail "normal Linux dry-run incorrectly enabled user-only apt reuse"
-fi
+rg -q 'Would install apt-available CLI packages, then bootstrap remaining tools through Pixi' <<< "$linux_output" || \
+    fail "normal Linux dry-run did not select apt-first reconciliation"
 
 server_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/server-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
     TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
@@ -316,7 +312,7 @@ if rg -q 'sudo apt-get' <<< "$user_only_output"; then
 fi
 rg -q 'chezmoi is not installed; would preview the rendered dotfiles here' <<< "$user_only_output" || \
     fail "dry-run did not tolerate missing chezmoi"
-rg -q 'reuse apt-provided commands' <<< "$user_only_output" || \
+rg -q 'reuse installed apt commands' <<< "$user_only_output" || \
     fail "user-only mode did not report apt command reuse"
 [[ ! -e "$TEST_TMP/user-only-source" ]] || fail "user-only dry-run created a source directory"
 
