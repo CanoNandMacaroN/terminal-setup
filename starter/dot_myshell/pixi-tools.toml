@@ -1,0 +1,105 @@
+# Public baseline for Linux, WSL, and native Windows.
+# Each entry is installed in an isolated Pixi global environment.
+
+[[tool]]
+environment = "bat"
+package = "bat"
+expose = "bat=bat"
+
+[[tool]]
+environment = "chezmoi"
+package = "chezmoi"
+expose = "chezmoi=chezmoi"
+
+[[tool]]
+environment = "eza"
+package = "eza"
+expose = "eza=eza"
+
+[[tool]]
+environment = "fastfetch"
+package = "fastfetch"
+expose = "fastfetch=fastfetch"
+
+[[tool]]
+environment = "fd"
+package = "fd-find"
+expose = "fd=fd"
+
+[[tool]]
+environment = "fnm"
+package = "fnm"
+expose = "fnm=fnm"
+
+[[tool]]
+environment = "fzf"
+package = "fzf"
+expose = "fzf=fzf"
+
+[[tool]]
+environment = "gh"
+package = "gh"
+expose = "gh=gh"
+
+[[tool]]
+environment = "git"
+package = "git"
+expose = "git=git"
+platforms = "windows"
+
+[[tool]]
+environment = "jd"
+package = "jd"
+expose = "jd=jd"
+
+[[tool]]
+environment = "jq"
+package = "jq"
+expose = "jq=jq"
+
+[[tool]]
+environment = "lazygit"
+package = "lazygit"
+expose = "lazygit=lazygit"
+
+[[tool]]
+environment = "ripgrep"
+package = "ripgrep"
+expose = "rg=rg"
+
+[[tool]]
+environment = "starship"
+package = "starship"
+expose = "starship=starship"
+
+[[tool]]
+environment = "tlrc"
+package = "tlrc"
+expose = "tldr=tldr"
+
+[[tool]]
+environment = "tmux"
+package = "tmux"
+expose = "tmux=tmux"
+platforms = "linux"
+
+[[tool]]
+environment = "uv"
+package = "uv"
+expose = "uv=uv,uvx=uvx"
+
+[[tool]]
+environment = "yazi"
+package = "yazi"
+expose = "yazi=yazi,ya=ya"
+
+[[tool]]
+environment = "zoxide"
+package = "zoxide"
+expose = "zoxide=zoxide"
+
+[[tool]]
+environment = "zsh"
+package = "zsh"
+expose = "zsh=zsh"
+platforms = "linux"

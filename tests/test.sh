@@ -23,7 +23,7 @@ zsh -n "$ROOT/starter/dot_myshell/functions/executable_env-sync"
 echo "[2/10] Platform detection"
 # shellcheck source=../lib/platform.sh
 source "$ROOT/lib/platform.sh"
-for expected in macos debian wsl; do
+for expected in macos debian wsl windows-native; do
     actual="$(TERMINAL_SETUP_TEST_PLATFORM="$expected" detect_platform)"
     [[ "$actual" == "$expected" ]] || fail "expected $expected, got $actual"
 done
@@ -37,9 +37,18 @@ linux_data='{"chezmoi":{"os":"linux","arch":"amd64","homeDir":"/home/tester"}}'
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" | bash -n
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
-    < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
+    < "$ROOT/starter/run_onchange_install-pixi-tools.sh.tmpl" | bash -n
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
-    < "$ROOT/starter/dot_zshrc.tmpl" | zsh -n
+    < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
+linux_zshrc="$(chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/dot_zshrc.tmpl")"
+printf '%s\n' "$linux_zshrc" | zsh -n
+rg -q 'export FNM_HOME=.*\.local/share.*fnm' <<< "$linux_zshrc" || \
+    fail "Linux zshrc does not define the user-level fnm directory"
+rg -q 'PATH="\$FNM_HOME:\$PATH"' <<< "$linux_zshrc" || \
+    fail "Linux zshrc does not persist the fnm PATH"
+rg -q 'PIXI_HOME.*\.pixi' <<< "$linux_zshrc" || fail "Linux zshrc does not define the Pixi home"
+rg -q 'PATH="\$PIXI_HOME/bin:\$PATH"' <<< "$linux_zshrc" || fail "Linux zshrc does not persist Pixi"
 darwin_intel_data='{"chezmoi":{"os":"darwin","arch":"amd64","homeDir":"/Users/tester"}}'
 intel_profile="$(chezmoi -S "$ROOT/starter" --override-data "$darwin_intel_data" execute-template \
     < "$ROOT/starter/dot_zprofile.tmpl")"
@@ -47,22 +56,67 @@ rg -q '/usr/local/bin/brew' <<< "$intel_profile" || fail "Intel macOS did not se
 if rg -q '/opt/homebrew/bin/brew' <<< "$intel_profile"; then
     fail "Intel macOS rendered the Apple Silicon Homebrew path"
 fi
-jq empty "$ROOT/starter/dot_config/cmux/cmux.json"
-rg -q '^cask "orca"$' "$ROOT/starter/dot_Brewfile" || fail "Orca is missing from the workstation manifest"
-rg -q '^cask "codex"$' "$ROOT/starter/dot_Brewfile" || fail "Codex is missing from the workstation manifest"
-rg -q '^cask "font-meslo-lg-nerd-font"$' "$ROOT/starter/dot_Brewfile" || fail "macOS prompt font is missing"
-rg -q '^brew "wireguard-tools"$' "$ROOT/starter/dot_Brewfile" || fail "WireGuard tools are missing"
-rg -q 'nerd-fonts/v3\.4\.0/patched-fonts/Meslo/S' "$ROOT/setup.sh" || \
-    fail "Linux prompt font installer is missing or unpinned"
-[[ "$(rg -c 'font_sha256=[0-9a-f]{64}' "$ROOT/setup.sh")" -eq 4 ]] || \
-    fail "Linux prompt fonts do not have four pinned checksums"
-rg -q '' "$ROOT/starter/dot_config/starship.toml" || fail "current Starship prompt theme was not synchronized"
-if rg -qi 'warp' "$ROOT/starter/dot_Brewfile"; then
-    fail "removed Warp app remains in the workstation manifest"
+if rg -q '^(cask|tap) "' "$ROOT/starter/dot_Brewfile"; then
+    fail "public Brewfile contains a cask or third-party tap"
 fi
+if rg -qi 'codebuddy|codex|cc-switch|cmux|ghostty|orca|spotify' "$ROOT/starter/dot_Brewfile"; then
+    fail "public Brewfile contains an application or AI-specific tool"
+fi
+for formula in bat chezmoi fd fnm fzf jq ripgrep starship uv zoxide; do
+    rg -q "^brew \"$formula\"$" "$ROOT/starter/dot_Brewfile" || fail "baseline formula is missing: $formula"
+done
+for pixi_environment in bat chezmoi eza fd fnm fzf jq ripgrep starship tmux uv yazi zoxide zsh; do
+    rg -q "^environment = \"$pixi_environment\"$" "$ROOT/starter/dot_myshell/pixi-tools.toml" || \
+        fail "Pixi baseline environment is missing: $pixi_environment"
+done
+rg -A3 '^environment = "tmux"$' "$ROOT/starter/dot_myshell/pixi-tools.toml" | \
+    rg -q '^platforms = "linux"$' || fail "tmux is not limited to Linux"
+rg -A3 '^environment = "zsh"$' "$ROOT/starter/dot_myshell/pixi-tools.toml" | \
+    rg -q '^platforms = "linux"$' || fail "zsh is not limited to Linux"
+rg -A3 '^environment = "git"$' "$ROOT/starter/dot_myshell/pixi-tools.toml" | \
+    rg -q '^platforms = "windows"$' || fail "Pixi Git bootstrap is not limited to Windows"
+if rg -qi 'codebuddy|codex|cc-switch|cmux|ghostty|orca|spotify' "$ROOT/starter/dot_myshell/pixi-tools.toml"; then
+    fail "public Pixi manifest contains an application or AI-specific tool"
+fi
+[[ "$(rg -c '^\[\[tool\]\]$' "$ROOT/starter/dot_myshell/uv-tools.toml")" -eq 1 ]] || \
+    fail "public uv manifest must contain exactly one tool"
+rg -q '^name = "ruff"$' "$ROOT/starter/dot_myshell/uv-tools.toml" || fail "ruff is missing from the uv baseline"
+if rg -qi 'determined|harlequin' "$ROOT/starter/dot_myshell/uv-tools.toml"; then
+    fail "specialist uv tools remain in the public manifest"
+fi
+rg -q 'nerd-fonts/v3\.4\.0/patched-fonts/Meslo/S' "$ROOT/setup.sh" || \
+    fail "prompt font installer is missing or unpinned"
+[[ "$(rg -c 'font_sha256=[0-9a-f]{64}' "$ROOT/setup.sh")" -eq 4 ]] || \
+    fail "prompt fonts do not have four pinned checksums"
+rg -q '' "$ROOT/starter/dot_config/starship.toml" || fail "current Starship prompt theme was not synchronized"
 if rg -q 'git|chezmoi-push' "$ROOT/starter/dot_myshell/functions/executable_env-sync"; then
     fail "env-sync must not stage, commit, or push"
 fi
+for env_sync_marker in 'brew tap' 'brew list --cask' 'pixi global list --json' 'pixi-tools.toml' 'uv-receipt.toml'; do
+    rg -q "$env_sync_marker" "$ROOT/starter/dot_myshell/functions/executable_env-sync" || \
+        fail "env-sync no longer captures $env_sync_marker"
+done
+windows_data='{"chezmoi":{"os":"windows","arch":"amd64","homeDir":"C:/Users/tester"}}'
+windows_managed="$(chezmoi -S "$ROOT/starter" --override-data "$windows_data" managed --include files)"
+rg -q 'Documents/PowerShell/Microsoft.PowerShell_profile.ps1' <<< "$windows_managed" || \
+    fail "Windows PowerShell 7 profile is not managed"
+if rg -q 'Documents/PowerShell/profile.ps1' <<< "$windows_managed"; then
+    fail "Windows uses a profile filename that PowerShell 7 does not load"
+fi
+rg -q '\.myshell/bin/sync-tools.ps1' <<< "$windows_managed" || fail "Windows tool sync script is not managed"
+if rg -q '\.zshrc|install-pixi-tools\.sh' <<< "$windows_managed"; then
+    fail "Windows still manages Unix-only targets"
+fi
+for powershell_template in \
+    "$ROOT/starter/dot_myshell/bin/sync-tools.ps1.tmpl" \
+    "$ROOT/starter/Documents/PowerShell/Microsoft.PowerShell_profile.ps1.tmpl"; do
+    rendered_powershell="$(chezmoi -S "$ROOT/starter" --override-data "$windows_data" execute-template < "$powershell_template")"
+    rg -q '\$ErrorActionPreference|\$PixiHome' <<< "$rendered_powershell" || \
+        fail "Windows PowerShell template did not render: $(basename "$powershell_template")"
+done
+rg -q 'https://pixi\.sh/install\.ps1' "$ROOT/setup.ps1" || fail "Windows setup does not use the official Pixi installer"
+rg -q 'pixi global uninstall' "$ROOT/setup.sh" || fail "Linux explicit Pixi pruning is missing"
+rg -q '"global", "uninstall"' "$ROOT/setup.ps1" || fail "Windows explicit Pixi pruning is missing"
 
 echo "[4/10] Starter target preview"
 mkdir -p "$TEST_TMP/home"
@@ -72,8 +126,11 @@ preview="$(HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" 
 echo "[5/10] Isolated starter apply"
 HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" apply --exclude scripts --no-tty
 HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" verify --exclude scripts
+HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" apply --exclude scripts --no-tty
+HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" verify --exclude scripts
 [[ -f "$TEST_TMP/home/.zshrc" ]] || fail "isolated apply did not create .zshrc"
-[[ -f "$TEST_TMP/home/.config/ghostty/config" ]] || fail "Ghostty configuration is missing"
+[[ ! -e "$TEST_TMP/home/.config/ghostty/config" ]] || fail "application-specific Ghostty configuration was applied"
+[[ ! -e "$TEST_TMP/home/.config/cmux/cmux.json" ]] || fail "application-specific cmux configuration was applied"
 [[ -x "$TEST_TMP/home/.myshell/functions/env-sync" ]] || fail "env-sync is not executable"
 
 echo "[6/10] Manifest reconciliation safety"
@@ -82,6 +139,7 @@ fake_home="$TEST_TMP/fake-manifest-home"
 fake_log="$TEST_TMP/manifest.log"
 mkdir -p "$fake_bin" "$fake_home/.myshell"
 cp "$ROOT/starter/dot_myshell/uv-tools.toml" "$fake_home/.myshell/uv-tools.toml"
+cp "$ROOT/starter/dot_myshell/pixi-tools.toml" "$fake_home/.myshell/pixi-tools.toml"
 
 cat > "$fake_bin/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -102,33 +160,64 @@ case "$1 $2" in
         ;;
 esac
 EOF
-chmod +x "$fake_bin/uname" "$fake_bin/brew" "$fake_bin/uv"
+cat > "$fake_bin/pixi" <<'EOF'
+#!/usr/bin/env bash
+echo "pixi $*" >> "$FAKE_LOG"
+EOF
+cat > "$fake_bin/jq" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$fake_bin/dpkg-query" <<'EOF'
+#!/usr/bin/env bash
+command_path=${!#}
+[[ "$command_path" == */jq ]]
+EOF
+chmod +x "$fake_bin/uname" "$fake_bin/brew" "$fake_bin/uv" "$fake_bin/pixi" \
+    "$fake_bin/jq" "$fake_bin/dpkg-query"
 
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" > "$TEST_TMP/install-packages.sh"
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-uv-tools.sh.tmpl" > "$TEST_TMP/install-uv.sh"
-chmod +x "$TEST_TMP/install-packages.sh" "$TEST_TMP/install-uv.sh"
+chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/run_onchange_install-pixi-tools.sh.tmpl" > "$TEST_TMP/install-pixi.sh"
+chmod +x "$TEST_TMP/install-packages.sh" "$TEST_TMP/install-pixi.sh" "$TEST_TMP/install-uv.sh"
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=0 "$TEST_TMP/install-packages.sh" >/dev/null
+FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=0 "$TEST_TMP/install-pixi.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=0 "$TEST_TMP/install-uv.sh" >/dev/null
 if rg -q 'cleanup|uninstall' "$fake_log"; then
     fail "default reconciliation pruned packages"
 fi
-rg -q '^uv python install 3\.10$' "$fake_log" || fail "determined Python policy was not applied"
-rg -q '^uv tool install harlequin --force$' "$fake_log" || fail "harlequin should remain unpinned"
 rg -q '^uv tool install ruff --force$' "$fake_log" || fail "ruff should remain unpinned"
-rg -q '^uv tool install --python 3\.10 --with PyYAML==5\.3\.1 --with ruamel-yaml==0\.17\.40 determined==0\.19\.10 --force$' \
-    "$fake_log" || fail "determined compatibility requirements were not applied"
+rg -q '^pixi global install --environment ripgrep --expose rg=rg ripgrep$' "$fake_log" || \
+    fail "Pixi did not install the ripgrep environment"
+rg -q '^pixi global install --environment tmux --expose tmux=tmux tmux$' "$fake_log" || \
+    fail "Pixi did not install the Linux-only tmux environment"
+if rg -q '^pixi global install --environment jq ' "$fake_log"; then
+    fail "Pixi duplicated jq even though an apt-owned jq command was available"
+fi
+if rg -q '^pixi global install --environment git ' "$fake_log"; then
+    fail "Linux installed the Windows-only Git Pixi environment"
+fi
+if rg -q 'determined|harlequin|uv python install' "$fake_log"; then
+    fail "specialist uv tools were installed by the public manifest"
+fi
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-packages.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-uv.sh" >/dev/null
-rg -q 'brew bundle cleanup --global --force --formula --cask --tap' "$fake_log" || \
-    fail "explicit Brew pruning did not cover formulae, casks, and taps"
+rg -q 'brew bundle cleanup --global --force --formula$' "$fake_log" || \
+    fail "explicit Brew pruning did not cover formulae"
+if rg -q -- '--cask|--tap' "$fake_log"; then
+    fail "public pruning attempted to remove casks or taps"
+fi
 rg -q 'uv tool uninstall black' "$fake_log" || fail "explicit uv pruning was not executed"
 if rg -q 'uv tool uninstall ruff' "$fake_log"; then
     fail "explicit uv pruning removed a declared tool"
 fi
 rg -q 'contains no valid tool names; refusing to prune' "$ROOT/setup.sh" || \
     fail "installer lacks an empty uv manifest pruning guard"
+rg -q 'contains no valid environments; refusing to prune' "$ROOT/setup.sh" || \
+    fail "installer lacks an empty Pixi manifest pruning guard"
 
 echo "[7/10] Age enablement and encrypted add"
 age_home="$TEST_TMP/age-home"
@@ -160,7 +249,8 @@ tar -tzf "$backup_file" | rg -q '/MANIFEST\.sha256$' || fail "backup is missing 
 
 echo "[9/10] Installer dry-run"
 help_output="$("$ROOT/setup.sh" --help)"
-[[ "$(rg -c '^  --' <<< "$help_output")" -eq 5 ]] || fail "installer option surface is no longer minimal"
+[[ "$(rg -c '^  --' <<< "$help_output")" -eq 6 ]] || fail "installer option surface is no longer minimal"
+rg -q -- '--user-only' <<< "$help_output" || fail "user-only mode is missing from the installer help"
 if rg -q -- '--profile|--source-dir|--git-name|--git-email|--skip-packages|--skip-node|--non-interactive|--force|--doctor|--version' <<< "$help_output"; then
     fail "removed advanced options returned to the public interface"
 fi
@@ -175,15 +265,33 @@ rg -q 'Xcode Command Line Tools installer' <<< "$clt_output" || fail "macOS CLT 
 linux_home="$TEST_TMP/linux-home"
 mkdir -p "$linux_home"
 linux_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/linux-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
+    TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
     "$ROOT/setup.sh" --dry-run 2>&1)"
 [[ ! -e "$TEST_TMP/linux-source" ]] || fail "Linux dry-run created a source directory"
 [[ ! -e "$linux_home/.local/bin" ]] || fail "Linux dry-run created ~/.local/bin"
 rg -q 'profile: server' <<< "$linux_output" || fail "Linux did not default to the server profile"
 rg -q 'Would install MesloLGS Nerd Font' <<< "$linux_output" || fail "Linux font installation was not previewed"
+rg -q 'Would install Pixi into' <<< "$linux_output" || fail "Linux Pixi installation was not previewed"
 
 server_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/server-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
+    TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
     "$ROOT/server-setup.sh" --dry-run)"
 rg -q 'profile: server' <<< "$server_output" || fail "server wrapper did not select the server profile"
+
+user_only_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/user-only-source" \
+    TERMINAL_SETUP_TEST_PLATFORM=debian TERMINAL_SETUP_TEST_CHEZMOI_MISSING=1 \
+    TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
+    "$ROOT/server-setup.sh" --user-only --dry-run 2>&1)"
+rg -q 'User-only mode: skipping apt packages and login-shell changes' <<< "$user_only_output" || \
+    fail "user-only mode did not skip system packages"
+if rg -q 'sudo apt-get' <<< "$user_only_output"; then
+    fail "user-only mode still previewed sudo apt commands"
+fi
+rg -q 'chezmoi is not installed; would preview the rendered dotfiles here' <<< "$user_only_output" || \
+    fail "dry-run did not tolerate missing chezmoi"
+rg -q 'reuse apt-provided commands' <<< "$user_only_output" || \
+    fail "user-only mode did not report apt command reuse"
+[[ ! -e "$TEST_TMP/user-only-source" ]] || fail "user-only dry-run created a source directory"
 
 echo "[10/10] Public-repository secret scan"
 # The public GitHub owner is intentionally documented in copy-ready clone URLs.
@@ -204,9 +312,13 @@ for readme in "$ROOT/README.md" "$ROOT/README_EN.md"; do
         fail "$(basename "$readme") contains a public quick-start placeholder"
     fi
 done
-rg -q 'cmux' "$ROOT/README.md" || fail "README does not document cmux"
+rg -q 'recommendations/' "$ROOT/README.md" || fail "README does not link the optional recommendations"
 rg -q 'server-setup.sh' "$ROOT/README.md" || fail "README does not document the server profile"
-rg -q 'CC Switch' "$ROOT/README.md" || fail "README does not document AI configuration ownership"
+rg -q 'setup.ps1' "$ROOT/README.md" || fail "README does not document native Windows setup"
+rg -q 'Pixi' "$ROOT/README.md" || fail "README does not document the Pixi package layer"
+rg -q 'CodeBuddy' "$ROOT/recommendations/cli-tools.md" || fail "recommendations omit CodeBuddy"
+rg -q 'determined' "$ROOT/recommendations/uv-tools.md" || fail "uv recommendations omit determined"
+rg -q 'harlequin' "$ROOT/recommendations/uv-tools.md" || fail "uv recommendations omit harlequin"
 rg -q 'ssh-keygen -y -f' "$ROOT/README.md" || fail "README does not document SSH public-key recovery"
 rg -q '缺少时自动打开同一个 macOS 系统安装器' "$ROOT/README.md" || \
     fail "README does not document automatic macOS CLT bootstrap behavior"

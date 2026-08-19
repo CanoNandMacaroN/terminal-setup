@@ -1,4 +1,4 @@
-# Homebrew paths are selected at render time for the target platform.
+# Package-manager paths are selected at render time for the target platform.
 {{- if and (eq .chezmoi.os "darwin") (eq .chezmoi.arch "arm64") }}
 if [ -x /opt/homebrew/bin/brew ]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -8,9 +8,8 @@ if [ -x /usr/local/bin/brew ]; then
     eval "$(/usr/local/bin/brew shellenv)"
 fi
 {{- else if eq .chezmoi.os "linux" }}
-if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
-    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-fi
+export PIXI_HOME="${PIXI_HOME:-{{ .chezmoi.homeDir }}/.pixi}"
+export PATH="$PIXI_HOME/bin:$PATH"
 {{- end }}
 
 export PATH="{{ .chezmoi.homeDir }}/.local/bin:$PATH"

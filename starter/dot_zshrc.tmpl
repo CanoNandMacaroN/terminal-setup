@@ -7,6 +7,19 @@ fi
 
 [[ -r "$HOME/.myshell/alias.sh" ]] && source "$HOME/.myshell/alias.sh"
 
+{{ if eq .chezmoi.os "linux" -}}
+export PIXI_HOME="${PIXI_HOME:-{{ .chezmoi.homeDir }}/.pixi}"
+case ":$PATH:" in
+    *":$PIXI_HOME/bin:"*) ;;
+    *) export PATH="$PIXI_HOME/bin:$PATH" ;;
+esac
+export FNM_HOME="${XDG_DATA_HOME:-{{ .chezmoi.homeDir }}/.local/share}/fnm"
+case ":$PATH:" in
+    *":$FNM_HOME:"*) ;;
+    *) export PATH="$FNM_HOME:$PATH" ;;
+esac
+{{ end -}}
+
 if command -v starship >/dev/null 2>&1; then
     eval "$(starship init zsh)"
 fi
@@ -15,6 +28,10 @@ autoload -Uz compinit
 if command -v brew >/dev/null 2>&1; then
     FPATH="$(brew --prefix)/share/zsh-completions:$FPATH"
 fi
+{{ if eq .chezmoi.os "linux" -}}
+[[ -d "${PIXI_HOME:-$HOME/.pixi}/completions/zsh" ]] && \
+    FPATH="${PIXI_HOME:-$HOME/.pixi}/completions/zsh:$FPATH"
+{{ end -}}
 compinit -C
 
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|=*' 'l:|=*'
@@ -54,6 +71,7 @@ function y() {
 }
 
 for plugin_file in \
+    "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" \
     "${HOMEBREW_PREFIX:-}/share/zsh-autosuggestions/zsh-autosuggestions.zsh" \
     /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh; do
     [[ -r "$plugin_file" ]] && source "$plugin_file" && break
@@ -62,6 +80,7 @@ ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 
 for plugin_file in \
+    "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" \
     "${HOMEBREW_PREFIX:-}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" \
     /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
     [[ -r "$plugin_file" ]] && source "$plugin_file" && break
@@ -76,8 +95,3 @@ case ":$PATH:" in
     *":$PNPM_HOME/bin:"*) ;;
     *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
-
-{{ if eq .chezmoi.os "darwin" -}}
-# CodeBuddy checks for this exact absolute path before appending it itself.
-export PATH="{{ .chezmoi.homeDir }}/.codebuddy/bin:$PATH"
-{{ end -}}

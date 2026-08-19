@@ -2,7 +2,7 @@
 
 A terminal environment bootstrap for new machines. It installs the required command-line tools, uses chezmoi to write configuration into Home, and keeps the environment aligned through package manifests.
 
-The default starter is public, credential-free, and ready to use. The macOS workstation profile installs the currently maintained CLI, GUI, and AI tools from its Brewfile. Linux/WSL applies only the portable terminal layer and never runs macOS casks.
+The default starter is public, credential-free, and ready to use. macOS uses Homebrew; Linux/WSL reuse apt-provided commands and use Pixi global for gaps; native Windows uses Pixi global. uv owns Python tools and fnm owns Node.js. GUI apps, casks, AI clients, and specialist tools are recommendations only.
 
 **[中文文档](README.md) · [Security policy](SECURITY.md) · [Maintenance policy](CONTRIBUTING.md)**
 
@@ -13,9 +13,10 @@ The default starter is public, credential-free, and ready to use. The macOS work
 | A fresh Mac using the generic public configuration | [Fresh Mac](#fresh-mac-from-zero) |
 | You already own a chezmoi/dotfiles repository | [Restore a private environment](#restore-your-own-chezmoi-repository) |
 | Debian, Ubuntu, WSL, or a Linux server | [Linux/WSL](#debian-ubuntu-wsl-or-a-linux-server) |
+| Native Windows with PowerShell 7 | [Native Windows](#native-windows) |
 | You only want to inspect the planned actions | [Preview first](#preview-before-installing) |
 
-If chezmoi is new to you, complete the Fresh Mac or Linux/WSL tutorial first, then return to the design and maintenance sections.
+If chezmoi is new to you, complete the Mac, Linux/WSL, or native Windows path for your platform before returning to the design and maintenance sections.
 
 ## Fresh Mac: From Zero
 
@@ -63,7 +64,7 @@ The installer will:
 3. Install Git, chezmoi, and the generic CLI toolset.
 4. Copy `starter/` into the local chezmoi source state.
 5. Back up existing files that chezmoi is about to manage.
-6. Apply the Zsh, Git, Starship, Ghostty, and related configuration.
+6. Apply the Zsh, Git, Starship, and related baseline configuration.
 7. Reconcile the Brewfile and uv tool manifest.
 8. Install Node LTS through fnm and enable pnpm through Corepack.
 9. Verify the resulting state with `chezmoi verify`.
@@ -190,7 +191,17 @@ cd terminal-setup
 ./doctor.sh
 ```
 
-The server workflow installs the base terminal tools through apt, then installs chezmoi, uv, Starship, and fnm. It attempts to make Zsh the login shell by default.
+The server workflow uses apt only for system bootstrap dependencies such as certificates, Git, SSH, rsync, Zsh, and build tools. It then installs Pixi under `~/.pixi`; Pixi global owns chezmoi, uv, Starship, fnm, and the common CLI baseline. The installer attempts to make Zsh the login shell by default.
+
+If the account is not in sudoers, or an administrator has already installed the system dependencies, use user-only mode:
+
+```sh
+./server-setup.sh --user-only
+```
+
+User-only mode does not call `sudo`, run `apt`, or change the login shell. It only requires preinstalled `curl` and `git`. Reconciliation checks commands with `~/.pixi/bin` removed from PATH and uses `dpkg-query` to confirm apt ownership: usable apt-provided commands are reused, while Pixi fills missing CLI commands such as Zsh, `fzf`, `ripgrep`, `fd`, `bat`, `tmux`, `lazygit`, and `yazi` under Home. Pinned Zsh autosuggestions and syntax-highlighting plugins are also installed in the user's data directory.
+
+Pixi and conda-forge inherit the current shell's `http_proxy`, `https_proxy`, and `no_proxy`. Configure a trusted proxy before setup on restricted networks; do not disable TLS verification.
 
 Use this on a container, managed server, or restricted account that cannot change its login shell:
 
@@ -207,7 +218,30 @@ DOTFILES_REPO='git@github.com:your-account/your-dotfiles-repository.git'
 ./server-setup.sh --repo "$DOTFILES_REPO"
 ```
 
-Your private source must use templates and `.chezmoiignore` to distinguish macOS from Linux. macOS casks cannot be applied unchanged on Linux.
+Your private source must use templates and `.chezmoiignore` to distinguish macOS, Linux, and Windows. macOS casks cannot be applied unchanged on other platforms.
+
+## Native Windows
+
+Native Windows uses the PowerShell entry point and does not require WSL or Homebrew. Obtain the repository with an existing Git installation or a GitHub ZIP, then run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+./setup.ps1 -DryRun
+./setup.ps1
+./doctor.ps1
+```
+
+`setup.ps1` invokes Pixi's official PowerShell installer and installs Pixi, Git, chezmoi, and the common CLI baseline under `%USERPROFILE%\.pixi`. It then applies shared Git, Starship, Pixi, uv, and PowerShell configuration. `tmux` remains Linux-only; native Windows uses PowerShell 7 instead of emulating Zsh.
+
+Restore a private source with `./setup.ps1 -Repo 'git@github.com:ACCOUNT/dotfiles.git'`; add `-AgeKeyFile` when it contains age-encrypted files. Windows excludes Unix run scripts during apply and explicitly invokes the managed tool synchronizer:
+
+```powershell
+chezmoi apply --exclude scripts
+& "$HOME/.myshell/bin/sync-tools.ps1"
+chezmoi verify --exclude scripts
+```
+
+The Windows workflow does not install fonts yet. Select an already installed Nerd Font in Windows Terminal for Starship glyphs.
 
 ## Preview Before Installing
 
@@ -224,18 +258,18 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 
 ## Resulting Environment
 
-| Capability | macOS | Linux/WSL |
-|---|---|---|
-| System build tools | Check Xcode Command Line Tools; open the system installer when missing | Install `build-essential` |
-| Zsh, Starship, fzf, zoxide | Yes | Yes |
-| Git, chezmoi, jq, ripgrep, fd, bat | Yes | Yes |
-| fnm-managed Node LTS, Corepack, pnpm | Yes | Yes |
-| uv and an uv tool manifest | Yes | Yes |
-| Homebrew Formula/Cask/Tap manifest | Yes | Not applied |
-| MesloLGS Nerd Font | Installed by Brew cask | Only the font required by Starship |
-| SSH, rsync, tmux | System/optional | Installed |
-| cmux/Ghostty configuration | Retained | cmux ignored; Ghostty retained |
-| GUI apps, casks, and AI tools | Installed from Brewfile | Not applied |
+| Capability | macOS | Linux/WSL | Native Windows |
+|---|---|---|---|
+| Platform package manager | Homebrew | Existing apt commands + Pixi global for gaps | Pixi global |
+| Bootstrap dependencies | Xcode Command Line Tools | apt or administrator-provided | PowerShell; repository from Git/ZIP |
+| Interactive shell | Zsh | Zsh | PowerShell 7 |
+| Starship, fzf, zoxide | Yes | Yes | Yes |
+| Git, chezmoi, jq, ripgrep, fd, bat | Yes | Yes | Yes |
+| fnm-managed Node LTS, Corepack, pnpm | Yes | Yes | Yes |
+| uv and uv tool manifest | Yes | Yes | Yes |
+| Platform CLI manifest | Brewfile | Pixi manifest | Pixi manifest |
+| MesloLGS Nerd Font | Automatic | Automatic | Select an installed font manually |
+| GUI apps, casks, and AI tools | Recommendations only | Recommendations only | Recommendations only |
 
 ### Terminal and CLI choices
 
@@ -245,7 +279,7 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 | Starship | Git, Node, and Python prompt context |
 | fzf, fd, ripgrep | History, path, and content search |
 | zoxide | Frecency-based directory navigation |
-| lsd, bat | Interactive-friendly listings and file output |
+| lsd/eza, bat | Interactive-friendly listings and file output; macOS uses lsd and Pixi platforms use eza |
 | Yazi, lazygit | Terminal file and Git interfaces |
 | jq, jd, tlrc | JSON, structural diffs, and example-oriented help |
 | fnm and Corepack | Node versions and project-owned pnpm versions |
@@ -253,13 +287,11 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 
 ### Starship and fonts
 
-The current Starship theme uses Nerd Font glyphs. macOS installs the complete Meslo font through the `font-meslo-lg-nerd-font` cask. Linux/WSL downloads and verifies only four `MesloLGS Nerd Font` files from a pinned Nerd Fonts release into the user font directory; it does not copy macOS applications or unrelated font families. Select `MesloLGS NF` or `MesloLGS Nerd Font` in the terminal, otherwise prompt symbols may render as boxes.
+The current Starship theme uses Nerd Font glyphs. macOS and Linux/WSL download and verify four `MesloLGS Nerd Font` files from a pinned Nerd Fonts release into the current user's font directory. Native Windows does not install fonts automatically yet. Select `MesloLGS NF` or `MesloLGS Nerd Font` in the terminal, otherwise prompt symbols may render as boxes.
 
 `doctor.sh` checks that the font files exist. Fonts affect presentation only; they do not change shell, Git, or package-manifest behavior.
 
-The public source retains generic cmux and Ghostty configuration and installs cmux from the macOS Brewfile. cmux builds on Ghostty's terminal capabilities with workspaces, panes, ports, and agent-session organization; it is one workstation entry point.
-
-The macOS manifest currently installs Codex, CodeBuddy, CC Switch, and related clients, but the starter contains no accounts, tokens, or model-provider configuration. Configuration that CC Switch can cloud-sync remains owned by CC Switch; private exceptions belong in an age-enabled private chezmoi source.
+The public starter does not install or configure specific applications such as cmux, Ghostty, Codex, CodeBuddy, or CC Switch. Optional apps, specialist CLIs, and uv tools are listed under [`recommendations/`](recommendations/README.md). Accounts, tokens, model-provider configuration, and application state belong in private configuration or application-owned storage.
 
 ## How It Works
 
@@ -269,9 +301,10 @@ terminal-setup installer
   ├─ initialize the public starter or a private chezmoi source
   └─ run chezmoi apply
           │
-          ├─ render shell/application configuration into Home
-          ├─ reconcile Brew/uv manifests through run_onchange
-          └─ verify the target state
+          ├─ render shell/CLI configuration into Home
+          ├─ macOS: reconcile Brew/uv through run_onchange
+          ├─ Linux/WSL: reconcile Pixi/uv through run_onchange
+          └─ Windows: reconcile Pixi/uv through sync-tools.ps1, then verify
 ```
 
 Chezmoi maintains two directions:
@@ -302,33 +335,34 @@ The repository README, license, tests, and installers are not applied to Home. O
 
 ## Bidirectional Package-Manifest Synchronization
 
-The Homebrew and uv manifests have both a Home target state and a chezmoi source state:
+The Homebrew, Pixi, and uv manifests have both a Home target state and a chezmoi source state:
 
 | Manifest | Home target | Public starter source |
 |---|---|---|
 | Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
+| Pixi CLI | `~/.myshell/pixi-tools.toml` | `starter/dot_myshell/pixi-tools.toml` |
 | uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
 
-When `env-sync` runs inside an initialized chezmoi repository, it reads the current Brew/uv installations, updates the target manifests under Home, and captures them back into the local chezmoi source with `chezmoi add`. It never stages, commits, or pushes:
+On macOS/Linux/WSL, `env-sync` inventories Brew taps, top-level Formulae, casks, and uv receipts and captures the managed Pixi declaration. Pixi caches, environments, and its solved internal manifest are runtime state and are not copied into chezmoi. The command never stages, commits, or pushes.
 
 ```text
 installed state → env-sync → Home target manifests → chezmoi add → chezmoi source manifests
 ```
 
-Recovery and normal application use the opposite direction. `chezmoi apply` writes the Home target manifests from source, then the `run_onchange` hooks invoke Brew and uv to install missing tools:
+Recovery uses the opposite direction. macOS/Linux/WSL use `run_onchange` to invoke Brew or Pixi plus uv. Native Windows excludes Unix scripts and calls `sync-tools.ps1` explicitly:
 
 ```text
-Git/chezmoi source manifests → chezmoi apply → Home target manifests → run_onchange → installed state
+Git/chezmoi source manifests → chezmoi apply → Home target manifests → platform synchronizer → installed state
 ```
 
-The `run_onchange_*.sh.tmpl` files are special executable source entries, not ordinary scripts copied permanently into Home. Git synchronizes declarations and hook sources, never uv caches, tool virtual environments, downloaded Python builds, or Homebrew download caches.
+The `run_onchange_*.sh.tmpl` files are Unix-only special executable source entries, not ordinary scripts copied permanently into Home. Windows uses the explicitly invoked managed `sync-tools.ps1`. Git synchronizes declarations and script sources, never Pixi/uv caches, tool environments, downloaded Python builds, or Homebrew downloads.
 
 ## Why `run_onchange` Keeps Packages Synchronized
 
 The script template embeds the manifest SHA-256 in its rendered output:
 
 ```text
-# Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
+# Pixi tools hash: {{ include "dot_myshell/pixi-tools.toml" | sha256sum }}
 ```
 
 Chezmoi records the rendered script state:
@@ -337,7 +371,7 @@ Chezmoi records the rendered script state:
 - An unchanged manifest renders identically and is skipped.
 - Adding or removing an entry changes the hash and triggers another run.
 
-The default policy installs missing tools without removing extras. To make the machine strictly match the manifests, inspect the cleanup scope and opt in explicitly:
+The default policy installs missing tools without removing extras. Pixi gives each CLI an isolated global environment and exposes commands through `~/.pixi/bin`. To make the machine strictly match the manifests, inspect the cleanup scope and opt in explicitly:
 
 ```sh
 ./setup.sh --prune
@@ -349,9 +383,9 @@ On a server:
 ./server-setup.sh --prune
 ```
 
-Pruning affects Brew Formulae, casks, taps, and uv tools. It uninstalls undeclared entries, so use it only after reviewing the manifest difference.
+Native Windows uses `./setup.ps1 -Prune`. Pruning covers Brew Formulae, Pixi global environments, and uv tools; it does not remove casks, taps, Pixi caches, or project environments. Use it only after reviewing the manifest difference.
 
-The public starter uses `~/.myshell/uv-tools.toml` to preserve installation constraints. It currently includes `determined` with a Python 3.10 compatibility environment, plus unpinned `ruff` and `harlequin` tools. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
+The public starter's `~/.myshell/uv-tools.toml` declares only unpinned `ruff`. Tools such as `determined` and `harlequin` live in [`recommendations/uv-tools.md`](recommendations/uv-tools.md) and are not installed automatically. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
 
 ## Node and pnpm Ownership
 
@@ -396,23 +430,26 @@ chezmoi apply
 chezmoi verify
 ```
 
-Capture taps, top-level Formulae, casks, and uv tools into the local chezmoi source manifests:
+Capture the managed package declarations into the local chezmoi source:
 
 ```sh
 env-sync
 ```
 
-Linux/WSL captures uv only. The function reads uv tool receipts to preserve declared version constraints, extra dependencies, and existing Python policy in `uv-tools.toml`. It updates Home and local chezmoi source state only; publishing remains a separate Git operation.
+Linux/WSL captures the Pixi declaration and uv receipts; macOS also captures the complete Brewfile. Existing uv constraints and Python policy are preserved. Native Windows uses `setup.ps1` and `sync-tools.ps1` instead of the Zsh `env-sync` function. Publishing remains a separate Git operation.
 
 Complete public installer options:
 
 ```text
 --repo URL            use an existing chezmoi repository
 --age-key-file PATH   import an age identity
---prune               remove undeclared Formulae, casks, taps, and uv tools
+--prune               remove undeclared Formulae, Pixi environments, and uv tools
+--user-only           Linux/WSL user-only installation; skip apt and login-shell changes
 --skip-shell-change   preserve the current login shell
 --dry-run             preview only
 ```
+
+Native Windows uses the PowerShell parameters `-Repo`, `-AgeKeyFile`, `-Prune`, and `-DryRun`.
 
 ## Full Recovery Backup
 
@@ -442,9 +479,11 @@ Tests cover shell syntax, platform detection, template rendering, isolated apply
 ```text
 terminal-setup/
 ├── setup.sh                 # main macOS/Linux installer
+├── setup.ps1                # native Windows PowerShell installer
 ├── server-setup.sh          # Linux/WSL entry point
 ├── bootstrap.sh             # temporary clone and installer launcher
 ├── doctor.sh                # post-install health check
+├── doctor.ps1               # native Windows health check
 ├── lib/                     # platform detection and shared functions
 ├── scripts/                 # age and full-backup tools
 ├── starter/                 # bundled public chezmoi source state

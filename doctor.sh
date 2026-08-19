@@ -54,9 +54,12 @@ section "Required commands"
 for command_name in git curl chezmoi zsh; do
     check_required "$command_name"
 done
+if [[ "$platform" != macos ]]; then
+    check_required pixi
+fi
 
 section "Workflow tools"
-for command_name in starship fnm node corepack pnpm uv fzf zoxide jq rg fd bat lazygit yazi; do
+for command_name in starship fnm node corepack pnpm uv fzf zoxide jq rg fd bat eza lazygit yazi; do
     check_optional "$command_name"
 done
 
@@ -92,6 +95,14 @@ for manifest in "$HOME/.myshell/uv-tools.toml"; do
 done
 if [[ "$platform" == macos ]]; then
     manifest="$HOME/.Brewfile"
+    if [[ -f "$manifest" ]]; then
+        success "$manifest: present"
+    else
+        warn "$manifest: missing"
+        warnings=$((warnings + 1))
+    fi
+else
+    manifest="$HOME/.myshell/pixi-tools.toml"
     if [[ -f "$manifest" ]]; then
         success "$manifest: present"
     else

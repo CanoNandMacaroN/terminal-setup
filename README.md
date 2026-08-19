@@ -2,7 +2,7 @@
 
 一套面向全新电脑的终端环境初始化工具。它会安装必要的命令行工具，用 chezmoi 把配置写入 Home，并通过软件清单持续维护环境。
 
-默认配置公开、无凭据、可直接使用。macOS 工作站会按 Brewfile 安装当前维护的 CLI、GUI 和 AI 工具；Linux/WSL 只应用跨平台终端层，不执行 macOS Cask。
+默认配置公开、无凭据、可直接使用。macOS 使用 Homebrew；Linux/WSL 复用 apt 已有命令并由 Pixi global 补齐缺失项；原生 Windows 使用 Pixi global。uv 专门管理 Python 工具，fnm 专门管理 Node.js。GUI、Cask、AI 客户端和专业工具只列为推荐，不自动安装。
 
 **[English](README_EN.md) · [安全策略中文版](SECURITY_ZH.md) · [维护边界](CONTRIBUTING_ZH.md)**
 
@@ -13,9 +13,10 @@
 | 一台全新的 Mac，先使用本项目的通用配置 | [全新 Mac](#全新-mac从零安装) |
 | 已经拥有自己的 chezmoi/dotfiles 仓库 | [恢复私人环境](#恢复你自己的-chezmoi-仓库) |
 | Debian、Ubuntu、WSL 或 Linux 服务器 | [Linux/WSL](#debianubuntu-wsl-或-linux-服务器) |
+| 原生 Windows 与 PowerShell 7 | [原生 Windows](#原生-windows) |
 | 只想看看脚本会做什么 | [安全预览](#先预览再安装) |
 
-第一次使用 chezmoi，建议先按“全新 Mac”或“Linux/WSL”完成安装，再阅读后面的原理和日常维护章节。
+第一次使用 chezmoi，建议先按当前平台的 Mac、Linux/WSL 或原生 Windows 路线完成安装，再阅读后面的原理和日常维护章节。
 
 ## 全新 Mac：从零安装
 
@@ -63,7 +64,7 @@ cd terminal-setup
 3. 安装 Git、chezmoi 和通用命令行工具。
 4. 把仓库中的 `starter/` 复制为本机 chezmoi 源状态。
 5. 备份即将被 chezmoi 管理的已有配置。
-6. 应用 Zsh、Git、Starship、Ghostty 等配置。
+6. 应用 Zsh、Git、Starship 等基础配置。
 7. 根据 Brewfile 和 uv 清单补齐工具。
 8. 通过 fnm 安装 Node LTS，再由 Corepack 启用 pnpm。
 9. 使用 `chezmoi verify` 检查结果。
@@ -190,7 +191,17 @@ cd terminal-setup
 ./doctor.sh
 ```
 
-服务器流程会通过 apt 安装基础终端工具，并安装 chezmoi、uv、Starship 和 fnm。它默认尝试把 Zsh 设置为登录 Shell。
+服务器流程只通过 apt 安装证书、Git、SSH、rsync、Zsh 和编译工具等系统引导依赖。随后把 Pixi 安装到 `~/.pixi`，由 Pixi global 安装 chezmoi、uv、Starship、fnm 和通用 CLI。它默认尝试把 Zsh 设置为登录 Shell。
+
+如果账号不在 sudoers 中，或者管理员已经代装好系统依赖，可以使用纯用户模式：
+
+```sh
+./server-setup.sh --user-only
+```
+
+纯用户模式不会调用 `sudo`，不会执行 `apt`，也不会修改登录 Shell。运行前只需确认 `curl` 和 `git` 已存在。同步时会检查排除 `~/.pixi/bin` 后的实际命令，并用 `dpkg-query` 确认其是否由 apt 提供：已有且可执行的命令直接复用，Pixi 只在 Home 内补齐缺失的 Zsh、`fzf`、`ripgrep`、`fd`、`bat`、`tmux`、`lazygit`、`yazi` 等 CLI。安装器还会把固定版本的 Zsh autosuggestions 和 syntax-highlighting 插件放到用户数据目录。
+
+Pixi 和 conda-forge 下载会继承当前 Shell 的 `http_proxy`、`https_proxy` 和 `no_proxy`。受限网络应先导入可信代理再运行安装，不要关闭 TLS 校验。
 
 容器、学校服务器或受限账号不允许修改登录 Shell 时，使用：
 
@@ -207,7 +218,36 @@ DOTFILES_REPO='git@github.com:你的账号/你的dotfiles仓库.git'
 ./server-setup.sh --repo "$DOTFILES_REPO"
 ```
 
-私人仓库必须自行用 chezmoi 模板和 `.chezmoiignore` 区分 macOS/Linux；macOS Cask 不能直接用于 Linux。
+私人仓库必须自行用 chezmoi 模板和 `.chezmoiignore` 区分 macOS、Linux 与 Windows；macOS Cask 不能直接用于其他平台。
+
+## 原生 Windows
+
+原生 Windows 使用 PowerShell 入口，不需要 WSL，也不使用 Homebrew。先通过已有 Git 或 GitHub ZIP 取得仓库，然后在 PowerShell 中运行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+./setup.ps1 -DryRun
+./setup.ps1
+./doctor.ps1
+```
+
+`setup.ps1` 会调用 Pixi 官方 PowerShell 安装器，把 Pixi、Git、chezmoi 和通用 CLI 写入 `%USERPROFILE%\.pixi`，再应用 Git、Starship、Pixi、uv 和 PowerShell 配置。`tmux` 只在 Linux 安装；Windows 使用 PowerShell 7，本项目不尝试在原生 Windows 模拟 Zsh。
+
+恢复私人仓库时使用：
+
+```powershell
+./setup.ps1 -Repo 'git@github.com:你的账号/你的dotfiles仓库.git'
+```
+
+存在 age 密文时还要传入 `-AgeKeyFile`。Windows 会使用 `chezmoi apply --exclude scripts` 避免执行 Unix Shell 钩子，然后显式调用受管的 `~/.myshell/bin/sync-tools.ps1`。日常手动应用也应保持这个顺序：
+
+```powershell
+chezmoi apply --exclude scripts
+& "$HOME/.myshell/bin/sync-tools.ps1"
+chezmoi verify --exclude scripts
+```
+
+当前 Windows 流程不自动安装字体。Starship 图标需要用户在 Windows Terminal 中选择已安装的 Nerd Font。
 
 ## 先预览再安装
 
@@ -224,18 +264,18 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 
 ## 安装完成后有什么
 
-| 能力 | macOS | Linux/WSL |
-|---|---|---|
-| 系统编译工具 | 检查 Xcode Command Line Tools；缺少时打开系统安装器 | 安装 `build-essential` |
-| Zsh、Starship、fzf、zoxide | 是 | 是 |
-| Git、chezmoi、jq、ripgrep、fd、bat | 是 | 是 |
-| fnm 管理的 Node LTS、Corepack、pnpm | 是 | 是 |
-| uv 与 uv 工具清单 | 是 | 是 |
-| Homebrew Formula/Cask/Tap 清单 | 是 | 不应用 |
-| MesloLGS Nerd Font | Brew Cask 安装 | 仅安装 Starship 所需字体 |
-| SSH、rsync、tmux | 系统/可选 | 安装 |
-| cmux/Ghostty 配置 | 保留 | cmux 忽略，Ghostty 配置保留 |
-| GUI、Cask、AI 工具 | 按 Brewfile 安装 | 不应用 |
+| 能力 | macOS | Linux/WSL | 原生 Windows |
+|---|---|---|---|
+| 平台包管理器 | Homebrew | apt 已有命令 + Pixi global 补齐 | Pixi global |
+| 系统引导依赖 | Xcode Command Line Tools | apt 或管理员预装 | PowerShell；仓库可由 Git/ZIP 获得 |
+| 交互 Shell | Zsh | Zsh | PowerShell 7 |
+| Starship、fzf、zoxide | 是 | 是 | 是 |
+| Git、chezmoi、jq、ripgrep、fd、bat | 是 | 是 | 是 |
+| fnm 管理的 Node LTS、Corepack、pnpm | 是 | 是 | 是 |
+| uv 与 uv 工具清单 | 是 | 是 | 是 |
+| 平台 CLI 清单 | Brewfile | Pixi 清单 | Pixi 清单 |
+| MesloLGS Nerd Font | 自动安装 | 自动安装 | 手动选择已安装字体 |
+| GUI、Cask、AI 工具 | 仅提供推荐 | 仅提供推荐 | 仅提供推荐 |
 
 ### 终端与 CLI 选择
 
@@ -245,7 +285,7 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 | Starship | Git、Node、Python 状态提示符 |
 | fzf + fd + ripgrep | 历史、路径和内容搜索 |
 | zoxide | 高频目录跳转 |
-| lsd、bat | 更适合交互阅读的 `ls`/`cat` |
+| lsd/eza、bat | 更适合交互阅读的 `ls`/`cat`；macOS 用 lsd，Pixi 平台用 eza |
 | Yazi、lazygit | 文件和 Git 的终端界面 |
 | jq、jd、tlrc | JSON、结构化差异和示例式帮助 |
 | fnm + Corepack | Node 版本和项目 pnpm 版本所有权 |
@@ -253,13 +293,51 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 
 ### Starship 与字体
 
-当前 Starship 主题使用 Nerd Font 图标。macOS 通过 `font-meslo-lg-nerd-font` Cask 安装完整 Meslo 字体；Linux/WSL 只从固定版本下载并校验四个 `MesloLGS Nerd Font` 字体文件到用户字体目录，不复制 macOS 应用或其他字体包。终端应选择 `MesloLGS NF`/`MesloLGS Nerd Font`，否则提示符图标可能显示为方框。
+当前 Starship 主题使用 Nerd Font 图标。macOS 和 Linux/WSL 都从固定版本下载并校验四个 `MesloLGS Nerd Font` 字体文件到当前用户的字体目录，不通过 Brew Cask 安装字体或应用。原生 Windows 暂不自动安装字体。终端应选择 `MesloLGS NF`/`MesloLGS Nerd Font`，否则提示符图标可能显示为方框。
 
 `doctor.sh` 会检查字体文件是否存在。字体只影响显示，不改变 Shell、Git 或软件清单行为。
 
-公共配置保留 cmux 和 Ghostty 的通用设置，并在 macOS 上按 Brewfile 安装 cmux。cmux 基于 Ghostty 的终端能力并增加工作区、分栏、端口和 agent 会话组织；它是工作站流程入口之一。
+公共 starter 不下发 cmux、Ghostty、Codex、CodeBuddy、CC Switch 等具体应用的安装或配置。可选应用、专业 CLI 和 uv 工具保留在 [`recommendations/`](recommendations/README.md) 中，由用户按机器角色选择；账号、Token、模型供应商配置和应用状态应进入私人配置或由应用自身管理。
 
-macOS 清单当前安装 Codex、CodeBuddy、CC Switch 等客户端，但 starter 不包含账号、Token 或模型供应商配置。CC Switch 能管理和云同步的模型配置继续由它负责；无法同步的私人例外应进入启用了 age 的私人 chezmoi 仓库。
+### 可选推荐清单
+
+下面的项目只作为建议，不会被公共 starter 自动安装。需要跨机器自动恢复时，应把经过审核的项目加入自己的私人 Brewfile、Pixi 清单或 uv 清单。
+
+**macOS 应用**
+
+```sh
+# 终端和工作区
+brew install --cask ghostty
+brew tap manaflow-ai/cmux && brew install --cask cmux
+
+# AI 客户端和配置管理
+brew install --cask codex
+brew tap farion1231/ccswitch && brew install --cask cc-switch
+brew tap stablyai/orca && brew install --cask orca
+
+# 桌面和设备工具
+brew install --cask keka monitorcontrol spotify switchhosts android-platform-tools
+```
+
+**专业 CLI**
+
+```sh
+brew install herdr imagemagick poppler scrcpy wireguard-tools
+brew tap tencent-codebuddy/tap
+brew install tencent-codebuddy/tap/codebuddy-code
+```
+
+**可选 uv 工具**
+
+```sh
+uv tool install harlequin
+uv tool install --python 3.10 \
+  --with PyYAML==5.3.1 \
+  --with ruamel-yaml==0.17.40 \
+  determined==0.19.10
+```
+
+CodeBuddy、Codex、CC Switch 等 AI 工具的账号、Token、OAuth 会话和供应商配置不应进入公共仓库。
 
 ## 它是怎样工作的
 
@@ -269,9 +347,11 @@ terminal-setup 安装器
   ├─ 初始化公共 starter 或私人 chezmoi 仓库
   └─ 调用 chezmoi apply
           │
-          ├─ 渲染 Shell/应用配置到 Home
-          ├─ run_onchange 对齐 Brew/uv 清单
-          └─ verify 检查目标状态
+          ├─ 渲染 Shell/CLI 配置到 Home
+          ├─ macOS: run_onchange 对齐 Brew/uv 清单
+          ├─ Linux/WSL: run_onchange 对齐 Pixi/uv 清单
+          └─ Windows: sync-tools.ps1 对齐 Pixi/uv 清单
+              然后 verify 检查目标状态
 ```
 
 chezmoi 维护两个方向：
@@ -304,33 +384,34 @@ chezmoi 维护两个方向：
 
 ## 软件清单的双向同步
 
-Homebrew 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
+Homebrew、Pixi 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
 
 | 清单 | Home 目标文件 | 公共 starter 源文件 |
 |---|---|---|
 | Homebrew | `~/.Brewfile` | `starter/dot_Brewfile` |
+| Pixi CLI | `~/.myshell/pixi-tools.toml` | `starter/dot_myshell/pixi-tools.toml` |
 | uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
 
-在已经初始化的 chezmoi 仓库中运行 `env-sync` 时，它读取当前 Brew/uv 安装状态，先更新 Home 中的目标清单，再通过 `chezmoi add` 把清单收回本机 chezmoi 源目录。它不会暂存、提交或推送：
+在 macOS/Linux/WSL 的 Zsh 中运行 `env-sync` 时，它会盘点 Brew Tap、顶层 Formula、Cask 和 uv receipt，并收回受管的 Pixi 期望清单。Pixi 的缓存、环境目录和求解后的内部 manifest 不进入 chezmoi。`env-sync` 不会暂存、提交或推送；发布私人派生仓库前仍需检查个人应用和临时工具：
 
 ```text
 当前安装状态 → env-sync → Home 目标清单 → chezmoi add → chezmoi 源清单
 ```
 
-在新机器恢复或日常应用时，方向相反。`chezmoi apply` 从源目录写出 Home 目标清单，再由 `run_onchange` 钩子调用 Brew 和 uv 补齐工具：
+在新机器恢复或日常应用时，方向相反。macOS/Linux/WSL 由 `run_onchange` 调用 Brew 或 Pixi 以及 uv；原生 Windows 由 `setup.ps1` 在排除 Unix scripts 后调用 `sync-tools.ps1`：
 
 ```text
-Git/chezmoi 源清单 → chezmoi apply → Home 目标清单 → run_onchange → 当前安装状态
+Git/chezmoi 源清单 → chezmoi apply → Home 目标清单 → 平台同步器 → 当前安装状态
 ```
 
-`run_onchange_*.sh.tmpl` 是 chezmoi 的特殊执行源，不会作为普通脚本长期复制到 Home。Git 只同步声明清单和脚本源，不同步 uv 缓存、工具虚拟环境、Python 二进制或 Homebrew 下载缓存。
+`run_onchange_*.sh.tmpl` 是 Unix 平台的 chezmoi 特殊执行源，不会作为普通脚本长期复制到 Home。Windows 的 `sync-tools.ps1` 是显式调用的受管脚本。Git 只同步声明和脚本源，不同步 Pixi/uv 缓存、工具环境、Python 二进制或 Homebrew 下载缓存。
 
 ## 为什么 `run_onchange` 能持续同步软件
 
 脚本模板会把清单的 SHA-256 写入渲染结果：
 
 ```text
-# Brewfile hash: {{ include "dot_Brewfile" | sha256sum }}
+# Pixi tools hash: {{ include "dot_myshell/pixi-tools.toml" | sha256sum }}
 ```
 
 chezmoi 记录渲染后脚本的状态：
@@ -339,7 +420,7 @@ chezmoi 记录渲染后脚本的状态：
 - 清单不变时渲染结果相同，因此跳过。
 - 清单增加或删除条目后哈希变化，因此再次执行。
 
-默认策略只补齐缺少的软件，不删除机器上的额外软件。确实要让机器严格匹配清单时，先检查清理范围，再显式运行：
+默认策略只补齐缺少的软件，不删除机器上的额外软件。Pixi 为每个 CLI 创建隔离的 global 环境，并把命令暴露到 `~/.pixi/bin`。确实要让机器严格匹配清单时，先检查清理范围，再显式运行：
 
 ```sh
 ./setup.sh --prune
@@ -351,9 +432,9 @@ chezmoi 记录渲染后脚本的状态：
 ./server-setup.sh --prune
 ```
 
-清理范围包括 Brew Formula、Cask、Tap 和 uv 工具。该操作会卸载清单外项目，因此只在明确检查过差异后使用。
+Windows 对应为 `./setup.ps1 -Prune`。清理范围包括 Brew Formula、Pixi global 环境和 uv 工具；不会清理 Cask、Tap、Pixi 缓存或项目环境。该操作会卸载清单外项目，因此只在明确检查过差异后使用。
 
-公共 starter 使用 `~/.myshell/uv-tools.toml` 保存工具安装约束。当前包含需要 Python 3.10 兼容环境的 `determined`，以及不锁包版本和解释器的 `ruff`、`harlequin`。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
+公共 starter 的 `~/.myshell/uv-tools.toml` 只声明不锁版本和解释器的 `ruff`。`determined`、`harlequin` 等工具移到 [`recommendations/uv-tools.md`](recommendations/uv-tools.md)，不会自动安装。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
 
 ## Node 与 pnpm 的边界
 
@@ -398,23 +479,26 @@ chezmoi apply
 chezmoi verify
 ```
 
-把本机 Tap、顶层 Formula、Cask 和 uv 工具写回本地 chezmoi 源清单：
+把当前机器的受管软件清单写回本地 chezmoi 源：
 
 ```sh
 env-sync
 ```
 
-Linux/WSL 只采集 uv。该函数从 uv tool receipt 保留安装时声明的版本约束、额外依赖和已有 Python 策略，生成 `uv-tools.toml`；它只更新 Home 与 chezmoi 源状态，发布仍是单独的 Git 操作。
+Linux/WSL 收回 Pixi 期望清单并采集 uv；macOS 同时采集完整 Brewfile。它会保留已有 uv 工具的版本约束和 Python 策略；发布仍是单独的 Git 操作。原生 Windows 使用 `setup.ps1`/`sync-tools.ps1`，不安装 Zsh 的 `env-sync` 函数。公共仓库不要未经审查直接发布同步结果。
 
 安装器的完整公开选项：
 
 ```text
 --repo URL            使用已有 chezmoi 仓库
 --age-key-file PATH   导入 age identity
---prune               清理清单外 Formula、Cask、Tap 和 uv 工具
+--prune               清理清单外 Formula、Pixi 环境和 uv 工具
+--user-only           Linux/WSL 纯用户安装，不调用 apt 或修改登录 Shell
 --skip-shell-change   不修改登录 Shell
 --dry-run             只预览
 ```
+
+原生 Windows 使用 PowerShell 参数：`-Repo`、`-AgeKeyFile`、`-Prune` 和 `-DryRun`。
 
 ## 完整恢复备份
 
@@ -444,9 +528,11 @@ git diff --cached --check
 ```text
 terminal-setup/
 ├── setup.sh                 # macOS/Linux 主安装器
+├── setup.ps1                # 原生 Windows PowerShell 安装器
 ├── server-setup.sh          # Linux/WSL 入口
 ├── bootstrap.sh             # 临时克隆并执行安装器
 ├── doctor.sh                # 安装后的健康检查
+├── doctor.ps1               # 原生 Windows 健康检查
 ├── lib/                     # 平台检测和公共函数
 ├── scripts/                 # age 与完整备份工具
 ├── starter/                 # 公共 chezmoi 源状态

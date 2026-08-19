@@ -1,4 +1,4 @@
-# Descr: Capture Homebrew and uv manifests into the local chezmoi source state.
+# Descr: Capture platform CLI and uv manifests into the local chezmoi source state.
 # Usage: env-sync
 
 emulate -L zsh
@@ -15,8 +15,13 @@ if [[ "$(uname -s)" == Darwin ]] && ! command -v brew >/dev/null 2>&1; then
     print -u2 -- "Missing command: brew"
     return 1
 fi
+if [[ "$(uname -s)" != Darwin ]] && ! command -v pixi >/dev/null 2>&1; then
+    print -u2 -- "Missing command: pixi"
+    return 1
+fi
 
 local brewfile="$HOME/.Brewfile"
+local pixi_tools_file="$HOME/.myshell/pixi-tools.toml"
 local uv_tools_file="$HOME/.myshell/uv-tools.toml"
 local temp_dir
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/env-sync.XXXXXX")" || return 1
@@ -44,6 +49,16 @@ if [[ "$(uname -s)" == Darwin ]]; then
     managed_targets=("$brewfile" "$uv_tools_file")
 else
     print -- "Skipping the macOS-only Homebrew manifest."
+    if [[ ! -r "$pixi_tools_file" ]]; then
+        print -u2 -- "Missing Pixi CLI manifest: $pixi_tools_file"
+        return 1
+    fi
+    if ! pixi global list --json >/dev/null; then
+        print -u2 -- "Pixi global state is unreadable; existing manifests were not changed."
+        return 1
+    fi
+    managed_targets=("$pixi_tools_file" "$uv_tools_file")
+    print -- "Capturing the managed Pixi CLI declaration."
 fi
 
 print -- "Capturing uv tool requirements..."
@@ -132,4 +147,4 @@ if ! cmp -s -- "$temp_uv_tools" "$uv_tools_file"; then
 fi
 
 chezmoi add --secrets error -- "${managed_targets[@]}" || return 1
-print -- "Captured manifests into the local chezmoi source; nothing was committed or pushed."
+print -- "Captured platform CLI and uv manifests into the local chezmoi source; nothing was committed or pushed."

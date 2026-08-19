@@ -1,0 +1,76 @@
+$ErrorActionPreference = "Stop"
+
+# Pixi tools hash: {{ include "dot_myshell/pixi-tools.toml" | sha256sum }}
+# uv tools hash: {{ include "dot_myshell/uv-tools.toml" | sha256sum }}
+
+$PixiManifest = Join-Path $HOME ".myshell\pixi-tools.toml"
+$UvManifest = Join-Path $HOME ".myshell\uv-tools.toml"
+if (-not (Get-Command pixi -ErrorAction SilentlyContinue)) { throw "Pixi is required" }
+if (-not (Test-Path $PixiManifest)) { throw "Missing Pixi CLI manifest: $PixiManifest" }
+
+$Tools = @()
+$Current = $null
+foreach ($Line in Get-Content $PixiManifest) {
+    if ($Line -eq "[[tool]]") {
+        if ($Current) { $Tools += [pscustomobject]$Current }
+        $Current = @{}
+        continue
+    }
+    if ($Current -and $Line -match '^(environment|package|expose|platforms) = "([^"]+)"$') {
+        $Current[$Matches[1]] = $Matches[2]
+    }
+}
+if ($Current) { $Tools += [pscustomobject]$Current }
+if ($Tools.Count -eq 0) { throw "Pixi CLI manifest contains no tools" }
+
+foreach ($Tool in $Tools) {
+    $Platforms = if ($Tool.platforms) { $Tool.platforms } else { "linux,windows" }
+    if (",$Platforms," -notlike "*,windows,*") { continue }
+    if (-not $Tool.environment -or -not $Tool.package -or -not $Tool.expose) {
+        throw "Invalid Pixi CLI manifest entry"
+    }
+    $Arguments = @("global", "install", "--environment", $Tool.environment)
+    foreach ($Mapping in $Tool.expose.Split(',')) {
+        $Arguments += @("--expose", $Mapping)
+    }
+    $Arguments += $Tool.package
+    & pixi @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "Pixi failed to install $($Tool.environment)" }
+}
+
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { throw "uv is required" }
+if (-not (Test-Path $UvManifest)) { throw "Missing uv tool manifest: $UvManifest" }
+$UvTools = @()
+$Current = $null
+foreach ($Line in Get-Content $UvManifest) {
+    if ($Line -eq "[[tool]]") {
+        if ($Current) { $UvTools += [pscustomobject]$Current }
+        $Current = @{}
+        continue
+    }
+    if ($Current -and $Line -match '^(name|package|python) = "([^"]+)"$') {
+        $Current[$Matches[1]] = $Matches[2]
+        continue
+    }
+    if ($Current -and $Line -match '^with = \[(.*)\]$') {
+        $Current["with"] = @([regex]::Matches($Matches[1], '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+    }
+}
+if ($Current) { $UvTools += [pscustomobject]$Current }
+if ($UvTools.Count -eq 0) { throw "uv tool manifest contains no tools" }
+
+foreach ($Tool in $UvTools) {
+    if (-not $Tool.name -or -not $Tool.package) { throw "Invalid uv tool manifest entry" }
+    if ($Tool.python) {
+        & uv python install $Tool.python
+        if ($LASTEXITCODE -ne 0) { throw "uv failed to install Python $($Tool.python)" }
+    }
+    $Arguments = @("tool", "install")
+    if ($Tool.python) { $Arguments += @("--python", $Tool.python) }
+    foreach ($Dependency in $Tool.with) { $Arguments += @("--with", $Dependency) }
+    $Arguments += @($Tool.package, "--force")
+    & uv @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "uv failed to install $($Tool.name)" }
+}
+
+Write-Host "Pixi and uv tool baselines are installed; extra tools were preserved."

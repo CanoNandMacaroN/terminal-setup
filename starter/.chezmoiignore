@@ -14,5 +14,21 @@ LICENSE
 
 {{ if ne .chezmoi.os "darwin" }}
 .Brewfile
-.config/cmux/
+{{ end }}
+
+{{ if eq .chezmoi.os "darwin" }}
+.myshell/pixi-tools.toml
+{{ end }}
+
+{{ if eq .chezmoi.os "windows" }}
+.zprofile
+.zshenv
+.zshrc
+.myshell/alias.sh
+.myshell/functions/
+{{ end }}
+
+{{ if ne .chezmoi.os "windows" }}
+Documents/PowerShell/
+.myshell/bin/sync-tools.ps1
 {{ end }}

@@ -1,0 +1,19 @@
+$PixiHome = if ($env:PIXI_HOME) { $env:PIXI_HOME } else { "{{ .chezmoi.homeDir }}\.pixi" }
+$PixiBin = Join-Path $PixiHome "bin"
+if ($env:PATH -notlike "*$PixiBin*") { $env:PATH = "$PixiBin;$env:PATH" }
+
+if (Get-Command pixi -ErrorAction SilentlyContinue) {
+    (& pixi completion --shell powershell) | Out-String | Invoke-Expression
+}
+if (Get-Command starship -ErrorAction SilentlyContinue) {
+    (& starship init powershell) | Out-String | Invoke-Expression
+}
+if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+    (& zoxide init powershell) | Out-String | Invoke-Expression
+}
+if (Get-Command fnm -ErrorAction SilentlyContinue) {
+    (& fnm env --use-on-cd --shell powershell) | Out-String | Invoke-Expression
+}
+
+$env:PNPM_HOME = Join-Path $env:LOCALAPPDATA "pnpm"
+if ($env:PATH -notlike "*$env:PNPM_HOME*") { $env:PATH = "$env:PNPM_HOME;$env:PATH" }

@@ -32,8 +32,8 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 brew bundle install --global --no-upgrade
 
 if [[ "${TERMINAL_SETUP_PRUNE:-0}" == 1 ]]; then
-    echo "Pruning Homebrew formulae, casks, and taps not declared by the Brewfile."
-    brew bundle cleanup --global --force --formula --cask --tap
+    echo "Pruning Homebrew formulae not declared by the Brewfile."
+    brew bundle cleanup --global --force --formula
 else
-    echo "Pruning disabled. Re-run setup with --prune to remove undeclared Homebrew entries."
+    echo "Pruning disabled. Re-run setup with --prune to remove undeclared Homebrew formulae."
 fi
