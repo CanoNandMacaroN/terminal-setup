@@ -7,6 +7,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw "Native Windows setup requires PowerShell 7 or newer (pwsh)."
+}
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SourceDir = if ($env:CHEZMOI_SOURCE_DIR) {
     $env:CHEZMOI_SOURCE_DIR
@@ -150,12 +153,39 @@ function Get-DeclaredNames([string]$Manifest, [string]$Field) {
     } | Sort-Object -Unique
 }
 
+function Get-DeclaredPixiEnvironments([string]$Manifest, [string]$Platform) {
+    $Names = [System.Collections.Generic.List[string]]::new()
+    $CurrentEnvironment = ""
+    $CurrentPlatforms = ""
+    foreach ($Line in Get-Content $Manifest) {
+        if ($Line -eq "[[tool]]") {
+            if ($CurrentEnvironment -and
+                (-not $CurrentPlatforms -or ",$CurrentPlatforms," -like "*,$Platform,*")) {
+                $Names.Add($CurrentEnvironment)
+            }
+            $CurrentEnvironment = ""
+            $CurrentPlatforms = ""
+            continue
+        }
+        if ($Line -match '^environment = "([^"]+)"$') {
+            $CurrentEnvironment = $Matches[1]
+        } elseif ($Line -match '^platforms = "([^"]+)"$') {
+            $CurrentPlatforms = $Matches[1]
+        }
+    }
+    if ($CurrentEnvironment -and
+        (-not $CurrentPlatforms -or ",$CurrentPlatforms," -like "*,$Platform,*")) {
+        $Names.Add($CurrentEnvironment)
+    }
+    return $Names | Sort-Object -Unique
+}
+
 function Prune-Manifests {
     if (-not $Prune -or $DryRun) { return }
     Write-Section "Manifest pruning"
     $PixiTools = Join-Path $HOME ".myshell\pixi-tools.toml"
     $GlobalManifest = Join-Path $PixiHome "manifests\pixi-global.toml"
-    $DesiredPixi = @(Get-DeclaredNames $PixiTools "environment")
+    $DesiredPixi = @(Get-DeclaredPixiEnvironments $PixiTools "windows")
     if ($DesiredPixi.Count -eq 0) { throw "pixi-tools.toml contains no environments; refusing to prune" }
     if (Test-Path $GlobalManifest) {
         $CurrentPixi = Get-Content $GlobalManifest | ForEach-Object {

@@ -4,6 +4,8 @@ set -euo pipefail
 # The rendered hash changes this script whenever the Pixi baseline changes.
 # Pixi tools hash: {{ include "dot_myshell/pixi-tools.toml" | sha256sum }}
 
+{{ include ".chezmoitemplates/pixi-tools.sh" }}
+
 {{ if eq .chezmoi.os "darwin" -}}
 echo "The Pixi CLI manifest is not used on macOS; skipping it on this platform."
 exit 0
@@ -13,6 +15,7 @@ exit 0
 {{ end -}}
 
 manifest="$HOME/.myshell/pixi-tools.toml"
+reuse_apt_marker="${TERMINAL_SETUP_REUSE_APT_FILE:-$HOME/.terminal-setup/reuse-apt}"
 if ! command -v pixi >/dev/null 2>&1; then
     echo "Pixi is required before applying the Linux/WSL CLI manifest." >&2
     exit 1
@@ -22,54 +25,10 @@ if [[ ! -r "$manifest" ]]; then
     exit 1
 fi
 
-apt_managed_command_available() {
-    local command_name=$1 pixi_bin path_entry system_path="" command_path resolved_path
-    command -v dpkg-query >/dev/null 2>&1 || return 1
-
-    pixi_bin="${PIXI_HOME:-$HOME/.pixi}/bin"
-    while IFS= read -r path_entry; do
-        [[ -n "$path_entry" && "${path_entry%/}" != "${pixi_bin%/}" ]] || continue
-        system_path="${system_path:+$system_path:}$path_entry"
-    done < <(printf '%s' "$PATH" | tr ':' '\n')
-    command_path="$(PATH="$system_path" command -v "$command_name" 2>/dev/null || true)"
-    [[ -n "$command_path" && -x "$command_path" ]] || return 1
-    dpkg-query -S "$command_path" >/dev/null 2>&1 && return 0
-
-    resolved_path="$(readlink -f "$command_path" 2>/dev/null || true)"
-    [[ -n "$resolved_path" && "$resolved_path" != "$command_path" ]] || return 1
-    dpkg-query -S "$resolved_path" >/dev/null 2>&1
-}
-
 entries_file="$(mktemp "${TMPDIR:-/tmp}/terminal-setup-pixi.XXXXXX")"
 trap 'rm -f -- "$entries_file"' EXIT HUP INT TERM
 
-awk '
-    function emit() {
-        if (!in_tool) return
-        if (environment == "" || package == "" || expose == "") exit 2
-        if (platforms == "") platforms="linux,windows"
-        print environment "\t" package "\t" expose "\t" platforms
-    }
-    $0 == "[[tool]]" {
-        emit()
-        in_tool=1
-        environment=package=expose=platforms=""
-        next
-    }
-    in_tool && /^environment = "/ {
-        value=$0; sub(/^environment = "/, "", value); sub(/"$/, "", value); environment=value; next
-    }
-    in_tool && /^package = "/ {
-        value=$0; sub(/^package = "/, "", value); sub(/"$/, "", value); package=value; next
-    }
-    in_tool && /^expose = "/ {
-        value=$0; sub(/^expose = "/, "", value); sub(/"$/, "", value); expose=value; next
-    }
-    in_tool && /^platforms = "/ {
-        value=$0; sub(/^platforms = "/, "", value); sub(/"$/, "", value); platforms=value; next
-    }
-    END { emit() }
-' "$manifest" > "$entries_file" || {
+terminal_setup_pixi_entries_for_platform "$manifest" linux > "$entries_file" || {
     echo "Invalid Pixi CLI manifest: each [[tool]] needs environment, package, and expose." >&2
     exit 1
 }
@@ -81,7 +40,6 @@ fi
 
 while IFS=$'\t' read -r environment package expose platforms; do
     all_from_apt=1
-    [[ ",$platforms," == *,linux,* ]] || continue
     case "$environment:$package:$expose:$platforms" in
         *[!A-Za-z0-9_.,=+@:/\<\>\*~-]*)
             echo "Unsupported value in Pixi CLI manifest entry: $environment" >&2
@@ -89,13 +47,17 @@ while IFS=$'\t' read -r environment package expose platforms; do
             ;;
     esac
     IFS=',' read -r -a exposed_commands <<< "$expose"
-    for exposed_command in "${exposed_commands[@]}"; do
-        command_name=${exposed_command%%=*}
-        if ! apt_managed_command_available "$command_name"; then
-            all_from_apt=0
-            break
-        fi
-    done
+    if [[ -f "$reuse_apt_marker" ]]; then
+        for exposed_command in "${exposed_commands[@]}"; do
+            command_name=${exposed_command%%=*}
+            if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
+                all_from_apt=0
+                break
+            fi
+        done
+    else
+        all_from_apt=0
+    fi
     if [[ "$all_from_apt" -eq 1 ]]; then
         echo "Using apt-provided command(s) for $environment; skipping Pixi."
         continue
@@ -110,4 +72,4 @@ while IFS=$'\t' read -r environment package expose platforms; do
     pixi "${args[@]}"
 done < "$entries_file"
 
-echo "The CLI baseline is available from apt and Pixi; extra global environments were preserved."
+echo "The Pixi CLI baseline is installed; user-only apt reuse and extra environments were preserved."

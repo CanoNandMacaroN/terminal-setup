@@ -13,11 +13,14 @@ fi
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/platform.sh
 source "$SCRIPT_DIR/lib/platform.sh"
+# shellcheck source=starter/.chezmoitemplates/pixi-tools.sh
+source "$SCRIPT_DIR/starter/.chezmoitemplates/pixi-tools.sh"
 
 DOTFILES_REPO=""
 AGE_KEY_FILE=""
 SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/chezmoi}"
 BACKUP_BASE="${TERMINAL_SETUP_BACKUP_DIR:-$HOME/.terminal-setup/backups}"
+REUSE_APT_MARKER="${TERMINAL_SETUP_REUSE_APT_FILE:-$HOME/.terminal-setup/reuse-apt}"
 SKIP_SHELL_CHANGE=0
 USER_ONLY=0
 PRUNE=0
@@ -198,25 +201,6 @@ install_pixi() {
     has_cmd pixi || die "Pixi installation failed"
 }
 
-apt_managed_command_available() {
-    local command_name=$1 pixi_bin path_entry system_path="" command_path resolved_path
-    [[ "$PLATFORM" == debian || "$PLATFORM" == wsl ]] || return 1
-    has_cmd dpkg-query || return 1
-
-    pixi_bin="${PIXI_HOME:-$HOME/.pixi}/bin"
-    while IFS= read -r path_entry; do
-        [[ -n "$path_entry" && "${path_entry%/}" != "${pixi_bin%/}" ]] || continue
-        system_path="${system_path:+$system_path:}$path_entry"
-    done < <(printf '%s' "$PATH" | tr ':' '\n')
-    command_path="$(PATH="$system_path" command -v "$command_name" 2>/dev/null || true)"
-    [[ -n "$command_path" && -x "$command_path" ]] || return 1
-    dpkg-query -S "$command_path" >/dev/null 2>&1 && return 0
-
-    resolved_path="$(readlink -f "$command_path" 2>/dev/null || true)"
-    [[ -n "$resolved_path" && "$resolved_path" != "$command_path" ]] || return 1
-    dpkg-query -S "$resolved_path" >/dev/null 2>&1
-}
-
 install_pixi_bootstrap_tool() {
     local environment=$1 package=$2 mapping command_name all_from_apt=1
     local -a mappings args
@@ -226,7 +210,7 @@ install_pixi_bootstrap_tool() {
     if [[ "$USER_ONLY" -eq 1 ]]; then
         for mapping in "${mappings[@]}"; do
             command_name=${mapping%%=*}
-            if ! apt_managed_command_available "$command_name"; then
+            if ! terminal_setup_apt_command_available "$command_name" "${PIXI_HOME:-$HOME/.pixi}/bin"; then
                 all_from_apt=0
                 break
             fi
@@ -246,27 +230,39 @@ install_pixi_bootstrap_tool() {
 }
 
 install_user_zsh_plugins() {
-    local plugin_root plugin_name plugin_repo plugin_ref plugin_target
+    local plugin_root plugin_name plugin_repo plugin_target
     [[ "$USER_ONLY" -eq 1 ]] || return 0
     plugin_root="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        warn "Would install pinned Zsh plugins into $plugin_root"
+        warn "Would install Zsh plugins into $plugin_root"
         return
     fi
 
     mkdir -p "$plugin_root"
-    while IFS='|' read -r plugin_name plugin_repo plugin_ref; do
+    while IFS='|' read -r plugin_name plugin_repo; do
         plugin_target="$plugin_root/$plugin_name"
-        if [[ -d "$plugin_target" ]]; then
+        if [[ -d "$plugin_target/.git" ]] && git -C "$plugin_target" rev-parse --verify HEAD >/dev/null 2>&1; then
             success "$plugin_name already installed"
             continue
         fi
-        git clone --quiet --depth 1 --branch "$plugin_ref" "$plugin_repo" "$plugin_target"
-        success "$plugin_name $plugin_ref installed"
+        [[ ! -e "$plugin_target" ]] || die "$plugin_target exists but is not a valid Git checkout"
+        git clone --quiet --depth 1 "$plugin_repo" "$plugin_target"
+        success "$plugin_name installed"
     done <<'EOF'
-zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|v0.7.1
-zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git|0.8.0
+zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git
+zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git
 EOF
+}
+
+configure_linux_package_policy() {
+    [[ "$PLATFORM" == debian || "$PLATFORM" == wsl ]] || return 0
+    [[ "$DRY_RUN" -eq 0 ]] || return 0
+    mkdir -p "$(dirname "$REUSE_APT_MARKER")"
+    if [[ "$USER_ONLY" -eq 1 ]]; then
+        touch "$REUSE_APT_MARKER"
+    else
+        rm -f -- "$REUSE_APT_MARKER"
+    fi
 }
 
 install_linux_user_tools() {
@@ -276,7 +272,11 @@ install_linux_user_tools() {
 
     info "Ensuring core terminal tools through Pixi"
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        warn "Would reuse apt-provided commands and bootstrap remaining core tools through Pixi"
+        if [[ "$USER_ONLY" -eq 1 ]]; then
+            warn "Would reuse apt-provided commands and bootstrap remaining core tools through Pixi"
+        else
+            warn "Would bootstrap core terminal tools through Pixi"
+        fi
     else
         install_pixi_bootstrap_tool chezmoi chezmoi chezmoi=chezmoi
         install_pixi_bootstrap_tool uv uv uv=uv uvx=uvx
@@ -500,16 +500,8 @@ prune_manifests() {
         [[ -f "$HOME/.myshell/pixi-tools.toml" ]]; then
         desired_file="$(mktemp "${TMPDIR:-/tmp}/terminal-setup-pixi-desired.XXXXXX")"
         current_file="$(mktemp "${TMPDIR:-/tmp}/terminal-setup-pixi-current.XXXXXX")"
-        awk '
-            $0 == "[[tool]]" { in_tool=1; next }
-            in_tool && /^environment = "/ {
-                value=$0
-                sub(/^environment = "/, "", value)
-                sub(/"$/, "", value)
-                print value
-                in_tool=0
-            }
-        ' "$HOME/.myshell/pixi-tools.toml" | LC_ALL=C sort -u > "$desired_file"
+        terminal_setup_pixi_entries_for_platform "$HOME/.myshell/pixi-tools.toml" linux | \
+            cut -f1 | LC_ALL=C sort -u > "$desired_file"
         if [[ ! -s "$desired_file" ]]; then
             rm -f -- "$desired_file" "$current_file"
             die "pixi-tools.toml contains no valid environments; refusing to prune"
@@ -575,6 +567,7 @@ initialize_node() {
 }
 
 install_prerequisites
+configure_linux_package_policy
 configure_default_shell
 initialize_source
 

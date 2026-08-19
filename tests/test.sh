@@ -12,6 +12,7 @@ fail() {
 
 echo "[1/10] Shell syntax"
 bash -n "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib/common.sh" "$ROOT/lib/platform.sh"
+bash -n "$ROOT/starter/.chezmoitemplates/pixi-tools.sh"
 bash -n "$ROOT/scripts/enable-age.sh" "$ROOT/scripts/add-secret.sh" "$ROOT/scripts/full-backup.sh"
 for reset_script in "$ROOT"/starter/dot_myshell/bin/*.sh; do
     [[ -e "$reset_script" ]] || continue
@@ -115,8 +116,19 @@ for powershell_template in \
         fail "Windows PowerShell template did not render: $(basename "$powershell_template")"
 done
 rg -q 'https://pixi\.sh/install\.ps1' "$ROOT/setup.ps1" || fail "Windows setup does not use the official Pixi installer"
+rg -q 'PSVersionTable\.PSVersion\.Major -lt 7' "$ROOT/setup.ps1" || \
+    fail "Windows setup does not enforce PowerShell 7"
 rg -q 'pixi global uninstall' "$ROOT/setup.sh" || fail "Linux explicit Pixi pruning is missing"
 rg -q '"global", "uninstall"' "$ROOT/setup.ps1" || fail "Windows explicit Pixi pruning is missing"
+rg -q 'Get-DeclaredPixiEnvironments.*"windows"' "$ROOT/setup.ps1" || \
+    fail "Windows Pixi pruning is not platform-aware"
+rg -q 'terminal_setup_pixi_entries_for_platform.*linux' "$ROOT/setup.sh" || \
+    fail "Linux Pixi pruning is not platform-aware"
+if rg -q -- '--branch|zsh-autosuggestions.*v0\.7\.1|zsh-syntax-highlighting.*0\.8\.0' "$ROOT/setup.sh"; then
+    fail "user-only Zsh plugins are still pinned to detached Git tags"
+fi
+rg -q 'git clone --quiet --depth 1 "\$plugin_repo"' "$ROOT/setup.sh" || \
+    fail "user-only Zsh plugins are not cloned from their default branches"
 
 echo "[4/10] Starter target preview"
 mkdir -p "$TEST_TMP/home"
@@ -193,15 +205,25 @@ rg -q '^pixi global install --environment ripgrep --expose rg=rg ripgrep$' "$fak
     fail "Pixi did not install the ripgrep environment"
 rg -q '^pixi global install --environment tmux --expose tmux=tmux tmux$' "$fake_log" || \
     fail "Pixi did not install the Linux-only tmux environment"
-if rg -q '^pixi global install --environment jq ' "$fake_log"; then
-    fail "Pixi duplicated jq even though an apt-owned jq command was available"
-fi
+rg -q '^pixi global install --environment jq --expose jq=jq jq$' "$fake_log" || \
+    fail "normal Linux reconciliation did not keep jq in the Pixi pipeline"
 if rg -q '^pixi global install --environment git ' "$fake_log"; then
     fail "Linux installed the Windows-only Git Pixi environment"
 fi
 if rg -q 'determined|harlequin|uv python install' "$fake_log"; then
     fail "specialist uv tools were installed by the public manifest"
 fi
+
+reuse_apt_log="$TEST_TMP/reuse-apt.log"
+mkdir -p "$fake_home/.terminal-setup"
+touch "$fake_home/.terminal-setup/reuse-apt"
+FAKE_LOG="$reuse_apt_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" \
+    TERMINAL_SETUP_PRUNE=0 "$TEST_TMP/install-pixi.sh" >/dev/null
+if rg -q '^pixi global install --environment jq ' "$reuse_apt_log"; then
+    fail "user-only reconciliation duplicated an apt-owned jq command"
+fi
+rg -q '^pixi global install --environment ripgrep ' "$reuse_apt_log" || \
+    fail "user-only reconciliation did not fill a missing command through Pixi"
 
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-packages.sh" >/dev/null
 FAKE_LOG="$fake_log" HOME="$fake_home" PATH="$fake_bin:/usr/bin:/bin" TERMINAL_SETUP_PRUNE=1 "$TEST_TMP/install-uv.sh" >/dev/null
@@ -272,6 +294,11 @@ linux_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/linux-source" T
 rg -q 'profile: server' <<< "$linux_output" || fail "Linux did not default to the server profile"
 rg -q 'Would install MesloLGS Nerd Font' <<< "$linux_output" || fail "Linux font installation was not previewed"
 rg -q 'Would install Pixi into' <<< "$linux_output" || fail "Linux Pixi installation was not previewed"
+rg -q 'Would bootstrap core terminal tools through Pixi' <<< "$linux_output" || \
+    fail "normal Linux dry-run did not keep the CLI baseline in Pixi"
+if rg -q 'reuse apt-provided commands' <<< "$linux_output"; then
+    fail "normal Linux dry-run incorrectly enabled user-only apt reuse"
+fi
 
 server_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/server-source" TERMINAL_SETUP_TEST_PLATFORM=debian \
     TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
