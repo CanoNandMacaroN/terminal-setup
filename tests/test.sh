@@ -14,12 +14,25 @@ echo "[1/10] Shell syntax"
 bash -n "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib/common.sh" "$ROOT/lib/platform.sh"
 bash -n "$ROOT/starter/.chezmoitemplates/pixi-tools.sh"
 bash -n "$ROOT/scripts/enable-age.sh" "$ROOT/scripts/add-secret.sh" "$ROOT/scripts/full-backup.sh"
-for reset_script in "$ROOT"/starter/dot_myshell/bin/*.sh; do
-    [[ -e "$reset_script" ]] || continue
-    bash -n "$reset_script"
+for shell_script in "$ROOT"/starter/dot_myshell/functions/*.sh; do
+    [[ -e "$shell_script" ]] || continue
+    bash -n "$shell_script"
 done
 zsh -n "$ROOT/starter/dot_zshenv"
-zsh -n "$ROOT/starter/dot_myshell/functions/executable_env-sync"
+zsh -n "$ROOT/starter/dot_myshell/bin/executable_env-sync"
+for zsh_command in env-sync proxy_off proxy_on set-ssh-key; do
+    [[ -f "$ROOT/starter/dot_myshell/bin/executable_$zsh_command" ]] || \
+        fail "Zsh command is missing from bin: $zsh_command"
+    [[ ! -e "$ROOT/starter/dot_myshell/functions/executable_$zsh_command" ]] || \
+        fail "Zsh command remains in functions: $zsh_command"
+done
+[[ -f "$ROOT/starter/dot_myshell/functions/sync-tools.ps1.tmpl" ]] || \
+    fail "PowerShell synchronizer is not in functions"
+[[ ! -e "$ROOT/starter/dot_myshell/bin/sync-tools.ps1.tmpl" ]] || \
+    fail "PowerShell synchronizer remains in bin"
+if find "$ROOT/starter/dot_myshell/bin" -maxdepth 1 -type f | rg -q '\.(sh|ps1)(\.tmpl)?$'; then
+    fail "Shell scripts with extensions must stay in functions"
+fi
 
 echo "[2/10] Platform detection"
 # shellcheck source=../lib/platform.sh
@@ -34,6 +47,11 @@ chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_instal
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-uv-tools.sh.tmpl" | bash -n
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/dot_zshrc.tmpl" | zsh -n
+starter_zshrc="$(chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/dot_zshrc.tmpl")"
+rg -q 'fpath=.*\.myshell/bin' <<< "$starter_zshrc" || fail "Zsh does not use myshell/bin as its function path"
+if rg -q '\.myshell/functions.*autoload' <<< "$starter_zshrc"; then
+    fail "Zsh still autoloads the Shell-script directory"
+fi
 linux_data='{"chezmoi":{"os":"linux","arch":"amd64","homeDir":"/home/tester"}}'
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" | bash -n
@@ -90,11 +108,11 @@ rg -q 'nerd-fonts/v3\.4\.0/patched-fonts/Meslo/S' "$ROOT/setup.sh" || \
 [[ "$(rg -c 'font_sha256=[0-9a-f]{64}' "$ROOT/setup.sh")" -eq 4 ]] || \
     fail "prompt fonts do not have four pinned checksums"
 rg -q '' "$ROOT/starter/dot_config/starship.toml" || fail "current Starship prompt theme was not synchronized"
-if rg -q 'git|chezmoi-push' "$ROOT/starter/dot_myshell/functions/executable_env-sync"; then
+if rg -q 'git|chezmoi-push' "$ROOT/starter/dot_myshell/bin/executable_env-sync"; then
     fail "env-sync must not stage, commit, or push"
 fi
 for env_sync_marker in 'brew tap' 'brew list --cask' 'pixi global list --json' 'pixi-tools.toml' 'uv-receipt.toml'; do
-    rg -q "$env_sync_marker" "$ROOT/starter/dot_myshell/functions/executable_env-sync" || \
+    rg -q "$env_sync_marker" "$ROOT/starter/dot_myshell/bin/executable_env-sync" || \
         fail "env-sync no longer captures $env_sync_marker"
 done
 windows_data='{"chezmoi":{"os":"windows","arch":"amd64","homeDir":"C:/Users/tester"}}'
@@ -104,12 +122,15 @@ rg -q 'Documents/PowerShell/Microsoft.PowerShell_profile.ps1' <<< "$windows_mana
 if rg -q 'Documents/PowerShell/profile.ps1' <<< "$windows_managed"; then
     fail "Windows uses a profile filename that PowerShell 7 does not load"
 fi
-rg -q '\.myshell/bin/sync-tools.ps1' <<< "$windows_managed" || fail "Windows tool sync script is not managed"
+rg -q '\.myshell/functions/sync-tools.ps1' <<< "$windows_managed" || fail "Windows tool sync script is not managed"
+if rg -q '\.myshell/bin/' <<< "$windows_managed"; then
+    fail "Windows still manages Unix Zsh commands"
+fi
 if rg -q '\.zshrc|install-pixi-tools\.sh' <<< "$windows_managed"; then
     fail "Windows still manages Unix-only targets"
 fi
 for powershell_template in \
-    "$ROOT/starter/dot_myshell/bin/sync-tools.ps1.tmpl" \
+    "$ROOT/starter/dot_myshell/functions/sync-tools.ps1.tmpl" \
     "$ROOT/starter/Documents/PowerShell/Microsoft.PowerShell_profile.ps1.tmpl"; do
     rendered_powershell="$(chezmoi -S "$ROOT/starter" --override-data "$windows_data" execute-template < "$powershell_template")"
     rg -q '\$ErrorActionPreference|\$PixiHome' <<< "$rendered_powershell" || \
@@ -143,7 +164,7 @@ HOME="$TEST_TMP/home" chezmoi -S "$ROOT/starter" -D "$TEST_TMP/home" verify --ex
 [[ -f "$TEST_TMP/home/.zshrc" ]] || fail "isolated apply did not create .zshrc"
 [[ ! -e "$TEST_TMP/home/.config/ghostty/config" ]] || fail "application-specific Ghostty configuration was applied"
 [[ ! -e "$TEST_TMP/home/.config/cmux/cmux.json" ]] || fail "application-specific cmux configuration was applied"
-[[ -x "$TEST_TMP/home/.myshell/functions/env-sync" ]] || fail "env-sync is not executable"
+[[ -x "$TEST_TMP/home/.myshell/bin/env-sync" ]] || fail "env-sync is not executable"
 
 echo "[6/10] Manifest reconciliation safety"
 fake_bin="$TEST_TMP/fake-bin"

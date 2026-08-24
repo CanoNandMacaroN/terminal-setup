@@ -25,10 +25,10 @@ LICENSE
 .zshenv
 .zshrc
 .myshell/alias.sh
-.myshell/functions/
+.myshell/bin/
 {{ end }}
 
 {{ if ne .chezmoi.os "windows" }}
 Documents/PowerShell/
-.myshell/bin/sync-tools.ps1
+.myshell/functions/sync-tools.ps1
 {{ end }}

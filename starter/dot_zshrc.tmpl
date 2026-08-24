@@ -1,8 +1,12 @@
 typeset -U PATH path FPATH fpath
 
-if [[ -d "$HOME/.myshell/functions" ]]; then
-    fpath=("$HOME/.myshell/functions" $fpath)
-    autoload -Uz "$HOME/.myshell/functions"/*(:t)
+if [[ -d "$HOME/.myshell/bin" ]]; then
+    fpath=("$HOME/.myshell/bin" $fpath)
+    for function_file in "$HOME"/.myshell/bin/*(N); do
+        [[ -f "$function_file" && "${function_file:t}" != *.* ]] || continue
+        autoload -Uz "${function_file:t}"
+    done
+    unset function_file
 fi
 
 [[ -r "$HOME/.myshell/alias.sh" ]] && source "$HOME/.myshell/alias.sh"

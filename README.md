@@ -239,11 +239,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 ./setup.ps1 -Repo 'git@github.com:你的账号/你的dotfiles仓库.git'
 ```
 
-存在 age 密文时还要传入 `-AgeKeyFile`。Windows 会使用 `chezmoi apply --exclude scripts` 避免执行 Unix Shell 钩子，然后显式调用受管的 `~/.myshell/bin/sync-tools.ps1`。日常手动应用也应保持这个顺序：
+存在 age 密文时还要传入 `-AgeKeyFile`。Windows 会使用 `chezmoi apply --exclude scripts` 避免执行 Unix Shell 钩子，然后显式调用受管的 `~/.myshell/functions/sync-tools.ps1`。日常手动应用也应保持这个顺序：
 
 ```powershell
 chezmoi apply --exclude scripts
-& "$HOME/.myshell/bin/sync-tools.ps1"
+& "$HOME/.myshell/functions/sync-tools.ps1"
 chezmoi verify --exclude scripts
 ```
 
@@ -401,6 +401,8 @@ Homebrew、Pixi 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
 | Pixi CLI | `~/.myshell/pixi-tools.toml` | `starter/dot_myshell/pixi-tools.toml` |
 | uv tools | `~/.myshell/uv-tools.toml` | `starter/dot_myshell/uv-tools.toml` |
 
+starter 使用 `~/.myshell/bin` 保存由 Zsh 自动加载的无扩展名命令，使用 `~/.myshell/functions` 保存带扩展名的独立 Shell 脚本。`.zshrc` 只自动加载 `bin` 中的无扩展名文件，不会把 `*.sh` 或 `*.ps1` 误当作 Zsh 函数体。
+
 在 macOS/Linux/WSL 的 Zsh 中运行 `env-sync` 时，它会盘点 Brew Tap、顶层 Formula、Cask 和 uv receipt，并收回受管的 Pixi 期望清单。Pixi 的缓存、环境目录和求解后的内部 manifest 不进入 chezmoi。`env-sync` 不会暂存、提交或推送；发布私人派生仓库前仍需检查个人应用和临时工具：
 
 ```text
@@ -494,7 +496,7 @@ chezmoi verify
 env-sync
 ```
 
-Linux/WSL 收回 Pixi 期望清单并采集 uv；macOS 同时采集完整 Brewfile。它会保留已有 uv 工具的版本约束和 Python 策略；发布仍是单独的 Git 操作。原生 Windows 使用 `setup.ps1`/`sync-tools.ps1`，不安装 Zsh 的 `env-sync` 函数。公共仓库不要未经审查直接发布同步结果。
+Linux/WSL 收回 Pixi 期望清单并采集 uv；macOS 同时采集完整 Brewfile。它会保留已有 uv 工具的版本约束和 Python 策略；发布仍是单独的 Git 操作。原生 Windows 使用 `setup.ps1`/`sync-tools.ps1`，不安装 Zsh 的 `env-sync` 命令。公共仓库不要未经审查直接发布同步结果。
 
 安装器的完整公开选项：
 

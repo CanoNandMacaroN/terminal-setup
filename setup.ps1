@@ -141,7 +141,7 @@ function Apply-Dotfiles {
     $env:TERMINAL_SETUP_PRUNE = "0"
     Invoke-External "chezmoi" @("-S", $SourceDir, "apply", "--no-tty", "--exclude", "scripts")
     Invoke-External "chezmoi" @("-S", $SourceDir, "verify", "--exclude", "scripts")
-    $SyncTools = Join-Path $HOME ".myshell\bin\sync-tools.ps1"
+    $SyncTools = Join-Path $HOME ".myshell\functions\sync-tools.ps1"
     if (-not (Test-Path $SyncTools)) { throw "Missing Windows tool sync script: $SyncTools" }
     & $SyncTools
 }
