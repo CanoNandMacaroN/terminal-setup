@@ -131,6 +131,7 @@ AGE_KEY_FILE="$HOME/Downloads/key.txt"
 
 - `AGE_KEY_FILE` 指向的是 age identity，不是 SSH 私钥。
 - identity 文件包含以 `AGE-SECRET-KEY-1` 开头的私钥行。
+- 如果密码管理器只提供这一行，`setup.sh` 会在安装前自动补全为包含 `# created`、`# public key` 和密钥行的标准 chezmoi identity 格式。
 - 不要把 identity 放进 dotfiles 仓库。
 - 不同机器的 SSH 私钥保持独立，不要通过 chezmoi 共用一把私钥。
 

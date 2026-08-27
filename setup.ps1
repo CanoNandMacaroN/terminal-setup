@@ -100,10 +100,24 @@ function Install-AgeKey {
     if (-not $AgeKeyFile) {
         throw "Encrypted source files require -AgeKeyFile on native Windows"
     }
-    $FirstSecretLine = Get-Content $AgeKeyFile | Where-Object { $_ -like "AGE-SECRET-KEY-1*" } | Select-Object -First 1
+    $FirstSecretLine = Get-Content $AgeKeyFile | Where-Object { $_ -match '^\s*AGE-SECRET-KEY-1[A-Z0-9]+\s*$' } | Select-Object -First 1
     if (-not $FirstSecretLine) { throw "Invalid age identity file" }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $KeyTarget) | Out-Null
-    Copy-Item $AgeKeyFile $KeyTarget
+    $TempKey = [System.IO.Path]::GetTempFileName()
+    try {
+        $PublicKey = (& chezmoi age-keygen -y $AgeKeyFile 2>$null)
+        if (-not $PublicKey) {
+            $Utf8 = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($TempKey, "$FirstSecretLine`n", $Utf8)
+            $PublicKey = (& chezmoi age-keygen -y $TempKey 2>$null)
+        }
+        if (-not $PublicKey) { throw "Could not derive age recipient" }
+        $Utf8 = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($TempKey, "# created: $((Get-Date).ToString('o'))`n# public key: $PublicKey`n$FirstSecretLine`n", $Utf8)
+        Move-Item -Force $TempKey $KeyTarget
+    } finally {
+        if (Test-Path $TempKey) { Remove-Item -Force $TempKey }
+    }
 }
 
 function Backup-ManagedTargets {

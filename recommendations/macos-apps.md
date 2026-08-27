@@ -19,7 +19,11 @@ brew install --cask cc-switch
 brew tap stablyai/orca
 brew install --cask orca
 brew tap anomalyco/tap
-brew install --cask sbx
+if [[ "$(uname -m)" == arm64 ]]; then
+  brew install --cask sbx
+else
+  echo "Skipping sbx: this Cask supports Apple Silicon only."
+fi
 ```
 
 ## Desktop utilities

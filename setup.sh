@@ -415,8 +415,11 @@ install_age_key() {
     ensure_private_dir "$HOME/.config/chezmoi"
     if [[ -n "$AGE_KEY_FILE" ]]; then
         [[ -r "$AGE_KEY_FILE" ]] || die "age key file is unreadable: $AGE_KEY_FILE"
-        grep -q '^AGE-SECRET-KEY-1' "$AGE_KEY_FILE" || die "invalid age identity file"
-        run install -m 600 "$AGE_KEY_FILE" "$key_target"
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            warn "Would normalize and import the age identity to $key_target"
+            return 0
+        fi
+        normalize_age_identity "$AGE_KEY_FILE" "$key_target"
         success "Age identity imported"
         return 0
     fi
@@ -430,10 +433,32 @@ install_age_key() {
     else
         umask 077
         printf '%s\n' "$key_value" > "$key_target"
-        chmod 600 "$key_target"
+        normalize_age_identity "$key_target" "$key_target"
     fi
     key_value=""
     success "Age identity stored"
+}
+
+normalize_age_identity() {
+    local input_file="$1" output_file="$2" secret_line public_key temp_file
+    secret_line="$(awk '
+        /^[[:space:]]*AGE-SECRET-KEY-1[A-Z0-9]+[[:space:]]*$/ { line=$0; sub(/^[[:space:]]*/, "", line); sub(/[[:space:]]*$/, "", line); count++ }
+        END { if (count != 1) exit 1; print line }
+    ' "$input_file")" || die "invalid age identity file: expected one AGE-SECRET-KEY-... line"
+    temp_file="$(mktemp "${output_file}.XXXXXX")" || die "could not create temporary age identity"
+    chmod 600 "$temp_file"
+    trap 'rm -f -- "$temp_file"' RETURN
+    printf '%s\n' "$secret_line" > "$temp_file"
+    public_key="$(chezmoi age-keygen -y "$temp_file")" || die "could not derive age recipient"
+    {
+        printf '# created: %s\n' "$(date -Iseconds)"
+        printf '# public key: %s\n' "$public_key"
+        printf '%s\n' "$secret_line"
+    } > "$temp_file"
+    chezmoi age-keygen -y "$temp_file" >/dev/null || die "generated age identity failed validation"
+    install -m 600 "$temp_file" "$output_file"
+    rm -f -- "$temp_file"
+    trap - RETURN
 }
 
 backup_managed_targets() {

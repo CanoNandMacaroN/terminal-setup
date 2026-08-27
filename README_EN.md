@@ -131,6 +131,7 @@ Before running it, confirm that:
 
 - `AGE_KEY_FILE` is an age identity, not an SSH private key.
 - It contains a private-key line beginning with `AGE-SECRET-KEY-1`.
+- If the password manager provides only that line, `setup.sh` normalizes it to the standard chezmoi identity format before installation.
 - The identity is never stored inside the dotfiles repository.
 - Each machine keeps its own SSH private keys instead of sharing one key through chezmoi.
 
