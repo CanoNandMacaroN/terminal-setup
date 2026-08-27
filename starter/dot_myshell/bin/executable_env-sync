@@ -28,6 +28,8 @@ temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/env-sync.XXXXXX")" || return 1
 trap 'rm -rf -- "$temp_dir"' EXIT HUP INT TERM
 
 local temp_brewfile="$temp_dir/Brewfile"
+local cask_origins="$temp_dir/Brewfile.cask-origins"
+local full_name
 local temp_uv_tools="$temp_dir/uv-tools.toml"
 local temp_uv_entries="$temp_dir/uv-tools.entries"
 
@@ -41,7 +43,27 @@ if [[ "$(uname -s)" == Darwin ]]; then
         printf '\n# Top-level formulae\n'
         brew leaves | LC_ALL=C sort | sed 's/^/brew "/;s/$/"/'
         printf '\n# macOS applications\n'
-        brew list --cask | LC_ALL=C sort | sed 's/^/cask "/;s/$/"/'
+        brew info --installed --cask | awk '
+            /^==> / {
+                token=$0
+                sub(/^==> /, "", token)
+                sub(/:.*/, "", token)
+                next
+            }
+            /^Cask from / {
+                tap=$0
+                sub(/^Cask from /, "", tap)
+                base=token
+                sub(/^.*\//, "", base)
+                if (tap == "homebrew/cask") print base "\t" base
+                else print base "\t" tap "/" base
+            }
+        ' | LC_ALL=C sort -u > "$cask_origins"
+        brew list --cask | LC_ALL=C sort | while IFS= read -r cask; do
+            full_name="$(awk -F '\t' -v token="$cask" '$1 == token { print $2; exit }' "$cask_origins")"
+            [[ -n "$full_name" ]] || full_name="$cask"
+            printf 'cask "%s"\n' "$full_name"
+        done
     } > "$temp_brewfile" || {
         print -u2 -- "Homebrew manifest capture failed; existing manifests were not changed."
         return 1

@@ -346,7 +346,7 @@ The Homebrew, Pixi, and uv manifests have both a Home target state and a chezmoi
 
 The starter keeps extensionless commands autoloaded by Zsh in `~/.myshell/bin` and standalone Shell scripts with extensions in `~/.myshell/functions`. `.zshrc` autoloads only extensionless files from `bin`, so `*.sh` and `*.ps1` files are never mistaken for Zsh function bodies.
 
-On macOS/Linux/WSL, `env-sync` inventories Brew taps, top-level Formulae, casks, and uv receipts and captures the managed Pixi declaration. Pixi caches, environments, and its solved internal manifest are runtime state and are not copied into chezmoi. The command never stages, commits, or pushes.
+On macOS/Linux/WSL, `env-sync` inventories Brew taps, top-level Formulae, casks, and uv receipts and captures the managed Pixi declaration. Casks from non-`homebrew/cask` sources are written with their tap-qualified names (for example, `stablyai/orca/orca`) to avoid resolving duplicate tokens to the wrong source. Pixi caches, environments, and its solved internal manifest are runtime state and are not copied into chezmoi. The command never stages, commits, or pushes.
 
 ```text
 installed state → env-sync → Home target manifests → chezmoi add → chezmoi source manifests

@@ -404,7 +404,7 @@ Homebrew、Pixi 和 uv 清单同时有 Home 目标状态与 chezmoi 源状态：
 
 starter 使用 `~/.myshell/bin` 保存由 Zsh 自动加载的无扩展名命令，使用 `~/.myshell/functions` 保存带扩展名的独立 Shell 脚本。`.zshrc` 只自动加载 `bin` 中的无扩展名文件，不会把 `*.sh` 或 `*.ps1` 误当作 Zsh 函数体。
 
-在 macOS/Linux/WSL 的 Zsh 中运行 `env-sync` 时，它会盘点 Brew Tap、顶层 Formula、Cask 和 uv receipt，并收回受管的 Pixi 期望清单。Pixi 的缓存、环境目录和求解后的内部 manifest 不进入 chezmoi。`env-sync` 不会暂存、提交或推送；发布私人派生仓库前仍需检查个人应用和临时工具：
+在 macOS/Linux/WSL 的 Zsh 中运行 `env-sync` 时，它会盘点 Brew Tap、顶层 Formula、Cask 和 uv receipt，并收回受管的 Pixi 期望清单。非 `homebrew/cask` 来源的 Cask 会自动写成 tap-qualified 名称（例如 `stablyai/orca/orca`），避免同名 Cask 解析到错误来源。Pixi 的缓存、环境目录和求解后的内部 manifest 不进入 chezmoi。`env-sync` 不会暂存、提交或推送；发布私人派生仓库前仍需检查个人应用和临时工具：
 
 ```text
 当前安装状态 → env-sync → Home 目标清单 → chezmoi add → chezmoi 源清单
