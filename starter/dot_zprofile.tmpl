@@ -10,6 +10,19 @@ fi
 {{- else if eq .chezmoi.os "linux" }}
 export PIXI_HOME="${PIXI_HOME:-{{ .chezmoi.homeDir }}/.pixi}"
 export PATH="$PIXI_HOME/bin:$PATH"
+export FNM_HOME="${XDG_DATA_HOME:-{{ .chezmoi.homeDir }}/.local/share}/fnm"
+export PATH="$FNM_HOME:$PATH"
 {{- end }}
 
 export PATH="{{ .chezmoi.homeDir }}/.local/bin:$PATH"
+
+# Keep Node and pnpm-installed CLIs visible to login/non-interactive SSH shells.
+if command -v fnm >/dev/null 2>&1; then
+    eval "$(fnm env --shell zsh)"
+fi
+{{ if eq .chezmoi.os "darwin" -}}
+export PNPM_HOME="{{ .chezmoi.homeDir }}/Library/pnpm"
+{{- else -}}
+export PNPM_HOME="${XDG_DATA_HOME:-{{ .chezmoi.homeDir }}/.local/share}/pnpm"
+{{- end }}
+export PATH="$PNPM_HOME/bin:$PATH"

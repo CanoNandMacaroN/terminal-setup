@@ -59,6 +59,16 @@ chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/run_onchange_install-pixi-tools.sh.tmpl" | bash -n
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/dot_zprofile.tmpl" | zsh -n
+linux_zprofile="$(chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
+    < "$ROOT/starter/dot_zprofile.tmpl")"
+rg -q 'export FNM_HOME=.*\.local/share.*fnm' <<< "$linux_zprofile" || \
+    fail "Linux zprofile does not define the user-level fnm directory"
+rg -q 'fnm env --shell zsh' <<< "$linux_zprofile" || \
+    fail "Linux zprofile does not initialize fnm for login shells"
+rg -q 'export PNPM_HOME=.*\.local/share.*pnpm' <<< "$linux_zprofile" || \
+    fail "Linux zprofile does not define the pnpm home"
+rg -q 'PATH="\$PNPM_HOME/bin:\$PATH"' <<< "$linux_zprofile" || \
+    fail "Linux zprofile does not persist the pnpm bin path"
 linux_zshrc="$(chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/dot_zshrc.tmpl")"
 printf '%s\n' "$linux_zshrc" | zsh -n

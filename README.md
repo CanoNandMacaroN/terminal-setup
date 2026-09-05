@@ -89,6 +89,8 @@ cd terminal-setup
 
 它已经是一个本地 Git 仓库，但还没有绑定你的私人远程仓库。你可以先使用，等需要跨机器同步时再创建自己的私人 Git 仓库并添加 remote。
 
+Linux 服务器上的 Node、pnpm 以及通过 pnpm 安装的 CLI（例如 Codex）会写入登录环境 `.zprofile`。这样桌面客户端通过 SSH 使用非交互式 Zsh 检查时，也能找到 `node` 和 `codex`；修改配置后请断开并重新建立 SSH 会话。
+
 ### 可选：一行启动
 
 已经装好 Git 后，也可以让引导脚本在临时目录中下载并执行项目：

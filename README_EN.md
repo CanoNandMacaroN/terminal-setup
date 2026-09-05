@@ -89,6 +89,8 @@ Your chezmoi source now lives at:
 
 It is already a local Git repository, but it is not connected to your private remote yet. You can use it immediately and add your own private remote when you want cross-machine synchronization.
 
+On Linux servers, the login environment in `.zprofile` exposes Node, pnpm, and CLIs installed through pnpm (such as Codex). This also makes them visible to desktop clients that inspect the host through a non-interactive SSH Zsh session; reconnect the SSH session after changing the profile.
+
 ### Optional one-line bootstrap
 
 After Git is available, the bootstrap script can clone into a temporary directory and run the installer:
