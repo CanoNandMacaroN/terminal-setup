@@ -212,7 +212,47 @@ Use this on a container, managed server, or restricted account that cannot chang
 ./server-setup.sh --skip-shell-change
 ```
 
-This preserves the account's login shell. The current starter still provides Zsh interactive configuration only, so start `zsh` manually when needed; a Bash configuration layer is not included.
+This preserves the account's login shell. On Linux/WSL, chezmoi apply maintains a Bash-to-Zsh bridge at the beginning of `.bashrc`: interactive terminals enter Zsh, commands supplied through `bash -i -c` are forwarded intact to `zsh -lc`, and ordinary non-interactive Bash retains Bash semantics. No sudo is required; see the SSH discussion below.
+
+### Codex desktop SSH: login shells, command forwarding, and CLI paths
+
+This section records behavior observed during an actual investigation, not a guarantee about every desktop version. SSH authentication succeeded, but the app reported `SSH websocket open timed out`; logs contained `zsh: command not found: GET` and WebSocket header names.
+
+**Startup sequence.** sshd starts the account's configured login shell. The inspected desktop version then used a command resembling `"$SHELL" -l -i -c 'payload'` to probe tools and start the remote service/proxy. It did not prefer Bash or fall back to Bash because Zsh was unavailable. Inspect the account with `getent passwd "$(id -un)" | cut -d: -f1,7`. `$SHELL` is inherited environment, not proof of the currently executing interpreter; use `$BASH_VERSION` / `$ZSH_VERSION` for that distinction.
+
+`-l` loads login configuration, `-i` requests interactive initialization, and `-c` executes the supplied command. Interactive initialization does not imply a real terminal. An unconditional `exec zsh -l` in interactive `.bashrc` discards the original `-c` payload. Zsh then reads protocol input as commands, interprets `GET` and request headers, and the WebSocket handshake times out. Keeping every `-c` command in Bash fixes that failure but leaves the service's shell environment set to Bash.
+
+**Repository fix.** On Linux/WSL, `run_onchange_before_configure-bash-ssh.sh.tmpl` prepends a managed block from `.chezmoitemplates/bash-ssh.sh` before Bash's non-interactive early return:
+
+| Session | Behavior |
+| --- | --- |
+| Non-interactive Bash / ordinary SSH command | Expose Pixi, fnm, pnpm and local CLI paths; retain Bash semantics |
+| Interactive Bash with `-c` | Export the Zsh path as `SHELL`; `exec "$SHELL" -lc "$BASH_EXECUTION_STRING"` |
+| Interactive Bash without `-c` | Export `SHELL`; `exec "$SHELL" -l` |
+| Zsh unavailable | Continue in Bash |
+| macOS / Windows | Do not run this Bash hook |
+
+The original command is passed as one quoted argument, including an empty command, without splitting or re-evaluation. The bridge does not read stdin, preserving protocol bytes and exit status. Explicitly launched interactive Bash also enters Zsh; use `bash --noprofile --norc` when you need an interactive Bash interpreter.
+
+The system account still starts with Bash, but the desktop's interactive startup stage transfers execution to Zsh and the service inherits its `SHELL`. Explicit application shell settings can override that environment. Existing `.bashrc` content is retained, changes receive a `.bashrc.backup-terminal-setup.*` backup, and reruns do not duplicate the block. Malformed/duplicate markers fail before writing. The hook does not remove custom legacy switching code: inspect obsolete `exec zsh` blocks, including those in `.profile` / `.bash_profile`. Login files must source `.bashrc`; Ubuntu's default `.profile` normally does, but custom login files may not. Interactive handoff happens before remaining Bash configuration, so move required custom environment into the appropriate Zsh startup files.
+
+**CLI versus terminal integration.** Executables are not Zsh-specific; their directories must be in PATH. `.zprofile` initializes login-command paths for fnm/Node, pnpm and Pixi. `zsh -lc` does not load `.zshrc`, so service-required environment must not live only there. `.zshrc` handles interactive functions, aliases and plugins. fzf's `source <(fzf --zsh)` is now guarded by `[[ -t 0 && -t 1 ]]` to avoid `can't change option: zle` without a terminal. The fzf executable remains available for pipelines and `--filter`; real terminals retain key bindings.
+
+**Apply and validate.** Merge the new hook, its template include and the `.zshrc` change into an existing private dotfiles source before running:
+
+```sh
+chezmoi apply
+bash -lic 'printf "zsh=%s shell=%s\n" "$ZSH_VERSION" "$SHELL"; command -v node pnpm codex'
+printf 'SSH_STDIN_OK\n' | bash -lic 'cat'
+zsh -lic 'printf "ZSH_INIT_OK\n"' < /dev/null
+```
+
+Expect a Zsh version and path, unchanged stdin, and no fzf `zle` error. Install Codex separately; it is not part of the baseline. Bash may still print job-control diagnostics without a terminal; these are distinct from losing the startup payload.
+
+Existing services retain their old environment. Save/finish remote work, restart the remote service using the desktop's supported workflow, then reconnect and open a new terminal. Reconnecting alone may reuse the old service. Use `codex app-server daemon restart` only for a daemon actually managed by that command; do not blindly retry or kill unrelated processes when it reports an unmanaged server. Confirm `connected` and successful initialization in app logs, then inspect `$ZSH_VERSION` / `$SHELL` in the new terminal. Application-specific shell overrides still apply.
+
+For rollback, restore the chosen backup or remove only the marked block, preserving later personal edits, and remove/revert the hook in the source so future changes do not reintroduce it. The fzf guard can be reverted independently. `chezmoi apply --exclude scripts` skips this hook. Because `.bashrc` is maintained by a hook rather than managed as a whole target, ordinary `chezmoi diff/verify` does not fully audit it; inspect the file and backup separately.
+
 
 To restore your own cross-platform source:
 

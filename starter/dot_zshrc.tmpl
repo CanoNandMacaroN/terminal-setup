@@ -52,7 +52,7 @@ zle -N down-line-or-beginning-search
 bindkey '^[[A' up-line-or-beginning-search
 bindkey '^[[B' down-line-or-beginning-search
 
-if command -v fzf >/dev/null 2>&1; then
+if [[ -t 0 && -t 1 ]] && command -v fzf >/dev/null 2>&1; then
     source <(fzf --zsh)
     export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
     if command -v fd >/dev/null 2>&1; then

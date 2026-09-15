@@ -35,6 +35,7 @@ if find "$ROOT/starter/dot_myshell/bin" -maxdepth 1 -type f | rg -q '\.(sh|ps1)(
 fi
 
 echo "[2/10] Platform detection"
+bash "$ROOT/tests/bash-ssh.sh"
 # shellcheck source=../lib/platform.sh
 source "$ROOT/lib/platform.sh"
 for expected in macos debian wsl windows-native; do

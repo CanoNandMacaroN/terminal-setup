@@ -212,7 +212,76 @@ Pixi 和 conda-forge 下载会继承当前 Shell 的 `http_proxy`、`https_proxy
 ./server-setup.sh --skip-shell-change
 ```
 
-这不会修改账号的登录 Shell，但当前 starter 只提供 Zsh 交互配置。需要时可以手动运行 `zsh`；本版本没有 Bash 配置层。
+这不会修改账号的登录 Shell。Linux/WSL 的 chezmoi apply 会在 `.bashrc` 开头维护一个 Bash → Zsh 中转块：普通交互终端进入 Zsh，`bash -i -c` 的命令完整交给 `zsh -lc`，普通非交互 Bash 保持 Bash 语义。无需 sudo；详细行为和 Codex 排障见下节。
+
+### Codex 桌面端通过 SSH 连接：Shell、CLI 与无 sudo 中转
+
+以下解释来自一次实际排障：SSH 密钥登录成功，但桌面端报 `SSH websocket open timed out`，日志同时出现 `zsh: command not found: GET` 和 `Sec-WebSocket-Version:` 等错误。这里记录的是所检查版本的启动行为，不保证所有版本都采用相同实现。
+
+#### 为什么 SSH 能登录，桌面端却连接失败？
+
+SSH 服务先启动账户数据库中配置的登录 Shell。桌面端并非固定优先 Bash，也不是找不到 Zsh 才退回 Bash；如果账户登录 Shell 是 `/bin/bash`，最初启动的就是 Bash。可在远端检查：
+
+```sh
+getent passwd "$(id -un)" | cut -d: -f1,7
+printf 'SHELL=%s\n' "$SHELL"
+command -v zsh
+```
+
+`SHELL` 是环境变量，不一定代表当前正在执行的解释器；Bash 用 `$BASH_VERSION`、Zsh 用 `$ZSH_VERSION` 判断当前解释器。修改 `SHELL` 也不会修改账户数据库。
+
+所检查的桌面端版本随后使用类似 `"$SHELL" -l -i -c '启动载荷'` 的方式探测 CLI、启动远程服务及连接代理。`-l` 表示登录 Shell，`-i` 表示交互初始化，`-c` 表示执行给定命令。**交互初始化不等于存在真实终端**：桌面端还需要通过标准输入传输协议数据。
+
+如果 `.bashrc` 中只有下面的无条件交互中转：
+
+```bash
+if [[ $- == *i* ]]; then
+    exec zsh -l
+fi
+```
+
+Bash 的 `-c` 命令会被丢弃。新 Zsh 从标准输入读取后续 WebSocket 握手，把 `GET` 等请求头当作 Shell 命令执行，最终握手超时。简单让所有 `-c` 留在 Bash 可以恢复连接，但服务继承的 `SHELL` 仍可能是 Bash，与用户期望的 Zsh 终端不一致。
+
+#### 本仓库的处理方式
+
+Linux/WSL 的 `run_onchange_before_configure-bash-ssh.sh.tmpl` 将受管块放在 `.bashrc` 的非交互提前 `return` 之前。块内容来自 `.chezmoitemplates/bash-ssh.sh`：
+
+| 场景 | 行为 |
+| --- | --- |
+| 普通非交互 Bash / SSH 命令 | 补齐 Pixi、fnm、pnpm 和 `~/.local/bin` 路径，保留 Bash 语义 |
+| 交互 Bash 且带 `-c` | 导出正确的 `SHELL`，执行 `exec "$SHELL" -lc "$BASH_EXECUTION_STRING"` |
+| 交互 Bash 且不带 `-c` | 导出正确的 `SHELL`，执行 `exec "$SHELL" -l` |
+| Zsh 不存在 | 继续使用 Bash |
+| macOS / Windows | 不运行此 Bash 配置钩子 |
+
+`BASH_EXECUTION_STRING` 必须作为一个完整、带引号的参数传递，不能重新拼接、拆词或二次 `eval`。中转不读取标准输入，因此协议字节、命令退出码可以正常传递。显式启动的交互 Bash 也会进入 Zsh；若确实要使用 Bash 专用语法，可用 `bash --noprofile --norc`。
+
+这不是修改系统登录 Shell：SSH 最初仍进入 Bash，但桌面端的交互启动阶段会立即转交 Zsh。远程服务继承 Zsh 的 `SHELL`；应用中显式设置的 Shell 仍可覆盖它，不能仅凭环境变量保证每个终端都采用同一解释器。
+
+钩子保留已有 `.bashrc` 内容，修改前创建 `.bashrc.backup-terminal-setup.*`，重复运行不重复添加块；对不完整或重复的受管标记拒绝写入。它不自动删除用户自定义的旧中转代码：请检查并移除不再需要的旧 `exec zsh` 块，尤其是 `.profile` / `.bash_profile` 中的中转。Bash 登录文件必须能够加载 `.bashrc`；Ubuntu 默认 `.profile` 通常已经如此，若自定义 `.bash_profile` 绕过了它，需要自行补上加载。交互中转会在剩余 Bash 配置之前发生；应放在 `.zprofile` / `.zshrc` 中的配置请迁移到相应文件。
+
+#### CLI 与终端插件的边界
+
+CLI 可执行文件不依赖 Zsh，只需正确的 PATH。`.zprofile` 初始化登录命令所需的 fnm/Node、pnpm、Pixi 路径；`.zshrc` 放交互别名、函数和插件。`zsh -lc` 不加载 `.zshrc`，不要把远程服务必需的环境变量只放在 `.zshrc`。
+
+fzf 的 `source <(fzf --zsh)` 会设置终端快捷键，在无终端的 `zsh -lic` 中可能触发 `can't change option: zle`。模板现在仅在 `[[ -t 0 && -t 1 ]]` 时加载它。fzf 程序本身仍能用于管道或 `--filter`，真正的终端仍保留快捷键。
+
+#### 应用、验证和回退
+
+已有私人 dotfiles 仓库需先合入新钩子、`.chezmoitemplates/bash-ssh.sh` 和 `.zshrc` 模板修改，再执行：
+
+```sh
+chezmoi apply
+bash -lic 'printf "zsh=%s shell=%s\n" "$ZSH_VERSION" "$SHELL"; command -v node pnpm codex'
+printf 'SSH_STDIN_OK\n' | bash -lic 'cat'
+zsh -lic 'printf "ZSH_INIT_OK\n"' < /dev/null
+```
+
+第一条探测应显示 Zsh 版本及其路径；`codex` 需要用户另外安装，本仓库不自动安装它。第二条应原样输出输入，第三条不应出现 fzf 的 `zle` 报错。无终端启动 Bash 时可能仍有 job-control 提示，它与 WebSocket 握手被 Shell 吞掉是不同问题。
+
+已经运行的远程服务不会自动继承新环境。先结束或保存远程工作，再通过桌面端支持的流程重启远程服务并重连；仅断开连接可能复用旧服务。只有服务确实由 `codex app-server daemon` 管理时，才使用其 `restart` 命令，遇到“不受管理”不要盲目重试或批量杀进程。验证应用日志出现 `connected`、初始化成功，并在新终端检查 `$ZSH_VERSION` 和 `$SHELL`。打开中的旧终端需要重新创建。
+
+若需回退，恢复选定的 `.bashrc.backup-terminal-setup.*`，或仅删除受管标记之间的块，同时从 dotfiles 源中撤销该钩子，避免未来模板变更重新引入它；fzf 条件可单独回退。不要覆盖备份之后新增的个人配置。`chezmoi apply --exclude scripts` 不运行此钩子；因为 `.bashrc` 是钩子维护而不是完整受管文件，普通 `chezmoi diff/verify` 不会完整审计它，需单独查看文件和备份。
 
 恢复自己的跨平台仓库时：
 

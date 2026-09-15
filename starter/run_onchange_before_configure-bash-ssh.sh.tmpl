@@ -1,0 +1,43 @@
+{{ if eq .chezmoi.os "linux" -}}
+#!/usr/bin/env bash
+set -euo pipefail
+# Bash bridge hash: {{ include ".chezmoitemplates/bash-ssh.sh" | sha256sum }}
+
+target="$HOME/.bashrc"
+begin='# >>> terminal-setup: Bash SSH environment >>>'
+end='# <<< terminal-setup: Bash SSH environment <<<'
+# Resolve symlinks so writing does not replace a user's symlink.
+if [[ -L "$target" ]]; then
+    target="$(readlink -f -- "$target")"
+fi
+[[ ! -e "$target" || -f "$target" ]] || { echo "Not a regular file: $target" >&2; exit 1; }
+scratch="$(mktemp -d)"
+trap 'rm -rf -- "$scratch"' EXIT
+if [[ -f "$target" ]]; then
+    # Reject incomplete/duplicate managed blocks before touching the original.
+    awk -v begin="$begin" -v end="$end" '
+        $0 == begin { if (inside || seen++) exit 1; inside=1; next }
+        $0 == end { if (!inside) exit 1; inside=0; next }
+        !inside { print }
+        END { if (inside) exit 1 }
+    ' "$target" > "$scratch/rest"
+else
+    : > "$scratch/rest"
+fi
+cat > "$scratch/new" <<'TERMINAL_SETUP_BASH'
+# >>> terminal-setup: Bash SSH environment >>>
+{{ include ".chezmoitemplates/bash-ssh.sh" }}
+# <<< terminal-setup: Bash SSH environment <<<
+TERMINAL_SETUP_BASH
+cat "$scratch/rest" >> "$scratch/new"
+if [[ -f "$target" ]] && cmp -s "$target" "$scratch/new"; then
+    exit 0
+fi
+bash -n "$scratch/new"
+if [[ -f "$target" ]]; then
+    backup="$(mktemp "${target}.backup-terminal-setup.XXXXXX")"
+    cp -p -- "$target" "$backup"
+    printf 'Bash SSH backup: %s\n' "$backup"
+fi
+cat "$scratch/new" > "$target"
+{{ end -}}
