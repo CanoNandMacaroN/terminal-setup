@@ -16,6 +16,7 @@
 | 配置服务器共享盘、本地数据盘、工作副本同步和备份 | [可选服务器服务](#server-services) |
 | 服务器上配置 Codex、排查 SSH 环境或 bwrap 错误 | [服务器与 Codex](#server-codex) |
 | 按需安装应用、专业 CLI 或 Python 工具 | [可选推荐](RECOMMENDATIONS.md) |
+| 用 Pixi 与 uv 搭建可复现的 Python 项目环境 | [项目环境](#pixi-uv) |
 | 原生 Windows 与 PowerShell 7 | [原生 Windows](#windows-setup) |
 | 只想看看脚本会做什么 | [安全预览](#preview-setup) |
 
@@ -314,6 +315,14 @@ DOTFILES_REPO='git@github.com:你的账号/你的dotfiles仓库.git'
 
 需要 Python 3.11+、rsync 和已有挂载，无需 sudo。此入口只安装该模块，不重新安装终端环境、不自动同步数据或启用定时任务。具体步骤和迁移方法见 [模块文档](server-services/README.md)。
 
+<a id="pixi-uv"></a>
+
+## 用 Pixi 与 uv 构建 Python 项目环境
+
+[`PIXI_UV.md`](PIXI_UV.md) 说明如何用 Pixi（接替 conda）与 uv（接替 pyenv、pip 与 virtualenv）搭建项目级 Python 环境：环境自包含在项目目录内，依赖按锁文件复现，缓存可随时回收。适用于任意项目，不依赖本仓库的软件清单。
+
+Pixi 负责 Python 之外的原生依赖与 CLI，uv 负责解释器版本与 Python 包；两道版本闸门加解释器的完整补丁号，保证换机器后仍能按锁还原。步骤、配置模板、迁移与排查见 [中文文档](PIXI_UV.md) 与 [English](PIXI_UV_EN.md)。
+
 <a id="server-codex"></a>
 
 ## 服务器与 Codex
@@ -408,6 +417,8 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 | jq、jd、tlrc | JSON、结构化差异和示例式帮助 |
 | fnm + Corepack | Node 版本和项目 pnpm 版本所有权 |
 | uv | Python 工具和隔离运行环境 |
+
+本仓库清单管理的是个人级命令；项目级 Python 环境（用 Pixi 与 uv 替代 conda、venv 与 pip）见 [用 Pixi 与 uv 构建 Python 项目环境](#pixi-uv)。
 
 ### Starship 与字体
 

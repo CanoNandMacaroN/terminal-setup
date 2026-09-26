@@ -16,6 +16,7 @@ The default starter is public, credential-free, and ready to use. macOS uses Hom
 | Shared/local server storage, working-copy synchronization, and backups | [Optional server services](#server-services) |
 | Server Codex configuration, SSH environment, or bwrap errors | [Servers and Codex](#server-codex) |
 | Optional applications, specialist CLIs, or Python tools | [Recommendations](RECOMMENDATIONS_EN.md) |
+| Reproducible Python project environments with Pixi and uv | [Project environments](#pixi-uv) |
 | Native Windows with PowerShell 7 | [Native Windows](#windows-setup) |
 | You only want to inspect the planned actions | [Preview first](#preview-setup) |
 
@@ -285,6 +286,14 @@ Copy and edit `server-services/config.example.toml` for the target machine, then
 
 Requires Python 3.11+, rsync, and existing mounts, without sudo. This entry installs only the module: it does not reinstall the terminal environment, synchronize data, or enable a timer automatically. See the [module guide](server-services/README_EN.md) for setup and migration.
 
+<a id="pixi-uv"></a>
+
+## Reproducible Python project environments with Pixi and uv
+
+[`PIXI_UV_EN.md`](PIXI_UV_EN.md) explains how to build project-level Python environments with Pixi (taking the role of conda) and uv (taking the role of pyenv, pip, and virtualenv): self-contained inside the project, reproducible from lock files, and safe to clean up. It applies to any project and does not depend on this repository's manifests.
+
+Pixi owns native dependencies and CLIs outside Python; uv owns the interpreter version and Python packages. Two version gates plus a full patch version in `.python-version` keep the environment reproducible on another machine. See the [English guide](PIXI_UV_EN.md) and [中文](PIXI_UV.md) for steps, templates, migration, and troubleshooting.
+
 <a id="server-codex"></a>
 
 ## Servers and Codex
@@ -373,6 +382,8 @@ When `--repo` refers to a private repository that has not been downloaded, dry r
 | jq, jd, tlrc | JSON, structural diffs, and example-oriented help |
 | fnm and Corepack | Node versions and project-owned pnpm versions |
 | uv | Python tools and isolated runtimes |
+
+The manifests in this repository manage machine-level commands; for project-level Python environments that replace conda, venv, and pip with Pixi and uv, see [Reproducible Python project environments](#pixi-uv).
 
 ### Starship and fonts
 
