@@ -10,13 +10,17 @@ The default starter is public, credential-free, and ready to use. macOS uses Hom
 
 | Your situation | Start here |
 |---|---|
-| A fresh Mac using the generic public configuration | [Fresh Mac](#fresh-mac-from-zero) |
-| You already own a chezmoi/dotfiles repository | [Restore a private environment](#restore-your-own-chezmoi-repository) |
-| Debian, Ubuntu, WSL, or a Linux server | [Linux/WSL](#debian-ubuntu-wsl-or-a-linux-server) |
-| Native Windows with PowerShell 7 | [Native Windows](#native-windows) |
-| You only want to inspect the planned actions | [Preview first](#preview-before-installing) |
+| A fresh Mac using the generic public configuration | [Fresh Mac](#mac-setup) |
+| You already own a chezmoi/dotfiles repository | [Restore a private environment](#restore-dotfiles) |
+| Debian, Ubuntu, WSL, or a Linux server | [Linux/WSL](#linux-setup) |
+| Server Codex configuration, SSH environment, or bwrap errors | [Servers and Codex](#server-codex) |
+| Optional applications, specialist CLIs, or Python tools | [Recommendations](RECOMMENDATIONS_EN.md) |
+| Native Windows with PowerShell 7 | [Native Windows](#windows-setup) |
+| You only want to inspect the planned actions | [Preview first](#preview-setup) |
 
 If chezmoi is new to you, complete the Mac, Linux/WSL, or native Windows path for your platform before returning to the design and maintenance sections.
+
+<a id="mac-setup"></a>
 
 ## Fresh Mac: From Zero
 
@@ -89,8 +93,6 @@ Your chezmoi source now lives at:
 
 It is already a local Git repository, but it is not connected to your private remote yet. You can use it immediately and add your own private remote when you want cross-machine synchronization.
 
-On Linux servers, the login environment in `.zprofile` exposes Node, pnpm, and CLIs installed through pnpm (such as Codex). This also makes them visible to desktop clients that inspect the host through a non-interactive SSH Zsh session; reconnect the SSH session after changing the profile.
-
 ### Optional one-line bootstrap
 
 After Git is available, the bootstrap script can clone into a temporary directory and run the installer:
@@ -101,6 +103,8 @@ curl -fsSL https://raw.githubusercontent.com/CanoNandMacaroN/terminal-setup/main
 ```
 
 This is convenient for users comfortable with piped scripts. Beginners should prefer the clone, dry-run, and install sequence above so the code and preview remain visible.
+
+<a id="restore-dotfiles"></a>
 
 ## Restore Your Own Chezmoi Repository
 
@@ -167,6 +171,8 @@ ssh-add -l
 ```
 
 When the target machine should have its own identity, generate a new key there and register only its public key. Never add a private key to the public starter.
+
+<a id="linux-setup"></a>
 
 ## Debian, Ubuntu, WSL, or a Linux Server
 
@@ -263,6 +269,28 @@ DOTFILES_REPO='git@github.com:your-account/your-dotfiles-repository.git'
 
 Your private source must use templates and `.chezmoiignore` to distinguish macOS, Linux, and Windows. macOS casks cannot be applied unchanged on other platforms.
 
+<a id="server-codex"></a>
+
+## Servers and Codex
+
+If a remote connection cannot find `node` / `codex`, or tool commands fail with bwrap permission errors, see the root-level [Codex problems and fixes](CODEX_SERVER_EN.md).
+
+Repair only the Bash/Zsh environment:
+
+```sh
+./scripts/configure-codex.sh
+```
+
+Also address the bwrap permission restriction from this incident:
+
+```sh
+./scripts/configure-codex.sh --no-sandbox
+```
+
+The second command disables Codex's local sandbox and runs with your user permissions, keeping approvals available on request. The helper requires Python 3.11+, backs up files before editing, and supports `--dry-run`. Reconnect the remote session afterward. The public installer does not run this configuration automatically.
+
+<a id="windows-setup"></a>
+
 ## Native Windows
 
 Native Windows uses the PowerShell entry point and does not require WSL or Homebrew. Obtain the repository with an existing Git installation or a GitHub ZIP, then run:
@@ -285,6 +313,8 @@ chezmoi verify --exclude scripts
 ```
 
 The Windows workflow does not install fonts yet. Select an already installed Nerd Font in Windows Terminal for Starship glyphs.
+
+<a id="preview-setup"></a>
 
 ## Preview Before Installing
 
@@ -334,7 +364,17 @@ The current Starship theme uses Nerd Font glyphs. macOS and Linux/WSL download a
 
 `doctor.sh` checks that the font files exist. Fonts affect presentation only; they do not change shell, Git, or package-manifest behavior.
 
-The public starter does not install or configure specific applications such as cmux, Ghostty, Codex, CodeBuddy, or CC Switch. Optional apps, specialist CLIs, and uv tools are listed under [`recommendations/`](recommendations/README.md). Accounts, tokens, model-provider configuration, and application state belong in private configuration or application-owned storage.
+The public starter does not install or configure specific applications such as cmux, Ghostty, Codex, CodeBuddy, or CC Switch. Optional apps, specialist CLIs, and uv tools are listed under [Optional applications and tools](RECOMMENDATIONS_EN.md). Accounts, tokens, model-provider configuration, and application state belong in private configuration or application-owned storage.
+
+<a id="optional-tools"></a>
+
+### Optional recommendations
+
+Installation commands are maintained in the root-level [English recommendations](RECOMMENDATIONS_EN.md) and [Chinese recommendations](RECOMMENDATIONS.md). The public starter does not run them automatically:
+
+- [macOS applications](RECOMMENDATIONS_EN.md#macos-apps): terminals, AI clients, desktop and device utilities.
+- [Specialist CLIs](RECOMMENDATIONS_EN.md#specialist-cli): Homebrew/Pixi installation and CodeBuddy.
+- [Optional uv tools](RECOMMENDATIONS_EN.md#uv-tools): Harlequin and the Determined CLI compatibility environment.
 
 ## How It Works
 
@@ -430,7 +470,7 @@ On a server:
 
 Native Windows uses `./setup.ps1 -Prune`. Pruning covers Brew Formulae, Pixi global environments, and uv tools; it does not remove casks, taps, Pixi caches, or project environments. Use it only after reviewing the manifest difference.
 
-The public starter's `~/.myshell/uv-tools.toml` declares only unpinned `ruff`. Tools such as `determined` and `harlequin` live in [`recommendations/uv-tools.md`](recommendations/uv-tools.md) and are not installed automatically. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
+The public starter's `~/.myshell/uv-tools.toml` declares only unpinned `ruff`. Tools such as `determined` and `harlequin` live in [Optional uv tools](RECOMMENDATIONS_EN.md#uv-tools) and are not installed automatically. The manifest is parsed and installed only by the `run_onchange` hook during `chezmoi apply`; it is never loaded at Zsh startup and does not copy uv caches, tool environments, or downloaded Python builds.
 
 ## Node and pnpm Ownership
 
@@ -523,6 +563,9 @@ Tests cover shell syntax, platform detection, template rendering, isolated apply
 
 ```text
 terminal-setup/
+├── CODEX_SERVER.md          # server Codex fixes (Chinese and English editions)
+├── RECOMMENDATIONS.md       # optional applications and tools (Chinese)
+├── RECOMMENDATIONS_EN.md    # optional applications and tools (English)
 ├── setup.sh                 # main macOS/Linux installer
 ├── setup.ps1                # native Windows PowerShell installer
 ├── server-setup.sh          # Linux/WSL entry point

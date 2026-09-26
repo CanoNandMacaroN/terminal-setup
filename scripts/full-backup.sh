@@ -32,7 +32,7 @@ COPYFILE_DISABLE=1 tar -cf - -C "$SOURCE_DIR" . | tar -xf - -C "$backup_root/che
 if [[ -d "$CONFIG_DIR" ]]; then
     COPYFILE_DISABLE=1 tar -cf - -C "$CONFIG_DIR" . | tar -xf - -C "$backup_root/chezmoi-config"
 fi
-chezmoi -S "$SOURCE_DIR" archive | tar -xf - -C "$backup_root/home-plaintext"
+chezmoi -S "$SOURCE_DIR" archive --format tar | tar -xf - -C "$backup_root/home-plaintext"
 git -C "$SOURCE_DIR" status --short --branch > "$backup_root/GIT_STATUS.txt" 2>/dev/null || true
 
 cat > "$backup_root/README.txt" <<'EOF'

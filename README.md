@@ -10,13 +10,17 @@
 
 | 你的情况 | 从哪里开始 |
 |---|---|
-| 一台全新的 Mac，先使用本项目的通用配置 | [全新 Mac](#全新-mac从零安装) |
-| 已经拥有自己的 chezmoi/dotfiles 仓库 | [恢复私人环境](#恢复你自己的-chezmoi-仓库) |
-| Debian、Ubuntu、WSL 或 Linux 服务器 | [Linux/WSL](#debianubuntu-wsl-或-linux-服务器) |
-| 原生 Windows 与 PowerShell 7 | [原生 Windows](#原生-windows) |
-| 只想看看脚本会做什么 | [安全预览](#先预览再安装) |
+| 一台全新的 Mac，先使用本项目的通用配置 | [全新 Mac](#mac-setup) |
+| 已经拥有自己的 chezmoi/dotfiles 仓库 | [恢复私人环境](#restore-dotfiles) |
+| Debian、Ubuntu、WSL 或 Linux 服务器 | [Linux/WSL](#linux-setup) |
+| 服务器上配置 Codex、排查 SSH 环境或 bwrap 错误 | [服务器与 Codex](#server-codex) |
+| 按需安装应用、专业 CLI 或 Python 工具 | [可选推荐](RECOMMENDATIONS.md) |
+| 原生 Windows 与 PowerShell 7 | [原生 Windows](#windows-setup) |
+| 只想看看脚本会做什么 | [安全预览](#preview-setup) |
 
 第一次使用 chezmoi，建议先按当前平台的 Mac、Linux/WSL 或原生 Windows 路线完成安装，再阅读后面的原理和日常维护章节。
+
+<a id="mac-setup"></a>
 
 ## 全新 Mac：从零安装
 
@@ -89,8 +93,6 @@ cd terminal-setup
 
 它已经是一个本地 Git 仓库，但还没有绑定你的私人远程仓库。你可以先使用，等需要跨机器同步时再创建自己的私人 Git 仓库并添加 remote。
 
-Linux 服务器上的 Node、pnpm 以及通过 pnpm 安装的 CLI（例如 Codex）会写入登录环境 `.zprofile`。这样桌面客户端通过 SSH 使用非交互式 Zsh 检查时，也能找到 `node` 和 `codex`；修改配置后请断开并重新建立 SSH 会话。
-
 ### 可选：一行启动
 
 已经装好 Git 后，也可以让引导脚本在临时目录中下载并执行项目：
@@ -101,6 +103,8 @@ curl -fsSL https://raw.githubusercontent.com/CanoNandMacaroN/terminal-setup/main
 ```
 
 这条命令适合熟悉管道脚本的用户。新手更推荐前面的“克隆、预览、安装”三步，因为可以先查看脚本内容和 dry run 结果。
+
+<a id="restore-dotfiles"></a>
 
 ## 恢复你自己的 chezmoi 仓库
 
@@ -167,6 +171,8 @@ ssh-add -l
 ```
 
 目标机器应保留自己的私钥时，则在该机器新建密钥并只登记新公钥；不要为了方便而把私钥加入公共 starter。
+
+<a id="linux-setup"></a>
 
 ## Debian、Ubuntu、WSL 或 Linux 服务器
 
@@ -292,6 +298,28 @@ DOTFILES_REPO='git@github.com:你的账号/你的dotfiles仓库.git'
 
 私人仓库必须自行用 chezmoi 模板和 `.chezmoiignore` 区分 macOS、Linux 与 Windows；macOS Cask 不能直接用于其他平台。
 
+<a id="server-codex"></a>
+
+## 服务器与 Codex
+
+远程连接找不到 `node` / `codex`，或执行命令时报 bwrap 权限错误时，查看根目录的 [Codex 问题与解决方案](CODEX_SERVER.md)。
+
+只修复 Bash/Zsh 环境：
+
+```sh
+./scripts/configure-codex.sh
+```
+
+同时处理本次 bwrap 权限限制：
+
+```sh
+./scripts/configure-codex.sh --no-sandbox
+```
+
+第二条会关闭 Codex 本地沙箱，以当前用户权限运行并保留按需审批。脚本需要 Python 3.11+，修改前自动备份；加 `--dry-run` 可预览。执行后重新连接远程会话。公共安装器不会自动执行此配置。
+
+<a id="windows-setup"></a>
+
 ## 原生 Windows
 
 原生 Windows 使用 PowerShell 入口，不需要 WSL，也不使用 Homebrew。先通过已有 Git 或 GitHub ZIP 取得仓库，然后在 PowerShell 中运行：
@@ -320,6 +348,8 @@ chezmoi verify --exclude scripts
 ```
 
 当前 Windows 流程不自动安装字体。Starship 图标需要用户在 Windows Terminal 中选择已安装的 Nerd Font。
+
+<a id="preview-setup"></a>
 
 ## 先预览再安装
 
@@ -369,56 +399,17 @@ Dry run 不创建 chezmoi 源目录，也不修改 Home。
 
 `doctor.sh` 会检查字体文件是否存在。字体只影响显示，不改变 Shell、Git 或软件清单行为。
 
-公共 starter 不下发 cmux、Ghostty、Codex、CodeBuddy、CC Switch 等具体应用的安装或配置。可选应用、专业 CLI 和 uv 工具保留在 [`recommendations/`](recommendations/README.md) 中，由用户按机器角色选择；账号、Token、模型供应商配置和应用状态应进入私人配置或由应用自身管理。
+公共 starter 不下发 cmux、Ghostty、Codex、CodeBuddy、CC Switch 等具体应用的安装或配置。可选应用、专业 CLI 和 uv 工具保留在 [可选应用与工具推荐](RECOMMENDATIONS.md) 中，由用户按机器角色选择；账号、Token、模型供应商配置和应用状态应进入私人配置或由应用自身管理。
+
+<a id="optional-tools"></a>
 
 ### 可选推荐清单
 
-下面的项目只作为建议，不会被公共 starter 自动安装。需要跨机器自动恢复时，应把经过审核的项目加入自己的私人 Brewfile、Pixi 清单或 uv 清单。
+安装命令集中维护在根目录的 [中文推荐文档](RECOMMENDATIONS.md) 与 [English recommendations](RECOMMENDATIONS_EN.md)，不由公共 starter 自动执行：
 
-**macOS 应用**
-
-```sh
-# 终端和工作区
-brew install --cask ghostty
-brew tap manaflow-ai/cmux && brew install --cask cmux
-
-# AI 客户端和配置管理
-brew install --cask codex
-brew tap farion1231/ccswitch && brew install --cask cc-switch
-brew tap stablyai/orca && brew install --cask orca
-
-# 桌面和设备工具
-brew install --cask keka monitorcontrol spotify switchhosts android-platform-tools
-```
-
-**专业 CLI**
-
-```sh
-# macOS
-brew install herdr imagemagick poppler scrcpy wireguard-tools
-brew tap tencent-codebuddy/tap
-brew install tencent-codebuddy/tap/codebuddy-code
-
-# Linux/WSL/Windows：先查询 conda-forge，再加入私人 Pixi 清单
-pixi search imagemagick
-pixi search poppler
-pixi global install --environment imagemagick imagemagick
-pixi global install --environment poppler poppler
-```
-
-Pixi 只能安装 conda-forge 已收录且支持当前平台的包。`herdr`、`scrcpy`、`wireguard-tools` 和 CodeBuddy 这类工具若查询不到，应使用上游官方安装方式，不要加入公共基线。
-
-**可选 uv 工具**
-
-```sh
-uv tool install harlequin
-uv tool install --python 3.10 \
-  --with PyYAML==5.3.1 \
-  --with ruamel-yaml==0.17.40 \
-  determined==0.19.10
-```
-
-CodeBuddy、Codex、CC Switch 等 AI 工具的账号、Token、OAuth 会话和供应商配置不应进入公共仓库。
+- [macOS 应用](RECOMMENDATIONS.md#macos-apps)：终端、AI 客户端、桌面与设备工具。
+- [专业 CLI](RECOMMENDATIONS.md#specialist-cli)：Homebrew/Pixi 安装方式与 CodeBuddy。
+- [可选 uv 工具](RECOMMENDATIONS.md#uv-tools)：Harlequin 与 Determined CLI 兼容环境。
 
 ## 它是怎样工作的
 
@@ -517,7 +508,7 @@ chezmoi 记录渲染后脚本的状态：
 
 Windows 对应为 `./setup.ps1 -Prune`。清理范围包括 Brew Formula、Pixi global 环境和 uv 工具；不会清理 Cask、Tap、Pixi 缓存或项目环境。该操作会卸载清单外项目，因此只在明确检查过差异后使用。
 
-公共 starter 的 `~/.myshell/uv-tools.toml` 只声明不锁版本和解释器的 `ruff`。`determined`、`harlequin` 等工具移到 [`recommendations/uv-tools.md`](recommendations/uv-tools.md)，不会自动安装。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
+公共 starter 的 `~/.myshell/uv-tools.toml` 只声明不锁版本和解释器的 `ruff`。`determined`、`harlequin` 等工具移到 [可选 uv 工具](RECOMMENDATIONS.md#uv-tools)，不会自动安装。清单只在 `chezmoi apply` 的 `run_onchange` 钩子中解析和安装，不会在 Zsh 启动时加载，也不复制 uv 缓存、工具虚拟环境或下载的 Python。
 
 ## Node 与 pnpm 的边界
 
@@ -610,6 +601,9 @@ git diff --cached --check
 
 ```text
 terminal-setup/
+├── CODEX_SERVER.md          # 服务器 Codex 解决方案（中英文两份）
+├── RECOMMENDATIONS.md       # 可选应用与工具推荐（中文）
+├── RECOMMENDATIONS_EN.md    # 可选应用与工具推荐（英文）
 ├── setup.sh                 # macOS/Linux 主安装器
 ├── setup.ps1                # 原生 Windows PowerShell 安装器
 ├── server-setup.sh          # Linux/WSL 入口

@@ -14,6 +14,12 @@ echo "[1/10] Shell syntax"
 bash -n "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib/common.sh" "$ROOT/lib/platform.sh"
 bash -n "$ROOT/starter/.chezmoitemplates/pixi-tools.sh"
 bash -n "$ROOT/scripts/enable-age.sh" "$ROOT/scripts/add-secret.sh" "$ROOT/scripts/full-backup.sh"
+bash -n "$ROOT/scripts/configure-codex.sh"
+if [[ "$(uname -s)" == Linux ]]; then
+    python3 "$ROOT/tests/test-configure-codex.py"
+else
+    echo "Skipping Linux-only Codex helper tests on $(uname -s)"
+fi
 for shell_script in "$ROOT"/starter/dot_myshell/functions/*.sh; do
     [[ -e "$shell_script" ]] || continue
     bash -n "$shell_script"
@@ -220,7 +226,8 @@ EOF
 chmod +x "$fake_bin/uname" "$fake_bin/brew" "$fake_bin/uv" "$fake_bin/pixi" \
     "$fake_bin/jq" "$fake_bin/dpkg-query"
 
-chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" > "$TEST_TMP/install-packages.sh"
+chezmoi -S "$ROOT/starter" --override-data "$darwin_intel_data" execute-template \
+    < "$ROOT/starter/run_onchange_install-packages.sh.tmpl" > "$TEST_TMP/install-packages.sh"
 chezmoi -S "$ROOT/starter" execute-template < "$ROOT/starter/run_onchange_install-uv-tools.sh.tmpl" > "$TEST_TMP/install-uv.sh"
 chezmoi -S "$ROOT/starter" --override-data "$linux_data" execute-template \
     < "$ROOT/starter/run_onchange_install-pixi-tools.sh.tmpl" > "$TEST_TMP/install-pixi.sh"
@@ -296,9 +303,10 @@ HOME="$TEST_TMP/home" CHEZMOI_SOURCE_DIR="$ROOT/starter" CHEZMOI_CONFIG_DIR="$TE
     "$ROOT/scripts/full-backup.sh" "$TEST_TMP/backups" >/dev/null
 backup_file="$(find "$TEST_TMP/backups" -type f -name 'dotfiles-full-backup-*.tar.gz' -print -quit)"
 [[ -n "$backup_file" ]] || fail "full-backup did not create an archive"
-tar -tzf "$backup_file" | rg -q '/chezmoi-source/dot_zshrc\.tmpl$' || fail "backup is missing source state"
-tar -tzf "$backup_file" | rg -q '/home-plaintext/\.zshrc$' || fail "backup is missing plaintext targets"
-tar -tzf "$backup_file" | rg -q '/MANIFEST\.sha256$' || fail "backup is missing its manifest"
+backup_contents="$(tar -tzf "$backup_file")"
+rg -q '/chezmoi-source/dot_zshrc\.tmpl$' <<< "$backup_contents" || fail "backup is missing source state"
+rg -q '/home-plaintext/\.zshrc$' <<< "$backup_contents" || fail "backup is missing plaintext targets"
+rg -q '/MANIFEST\.sha256$' <<< "$backup_contents" || fail "backup is missing its manifest"
 
 echo "[9/10] Installer dry-run"
 help_output="$("$ROOT/setup.sh" --help)"
@@ -312,7 +320,7 @@ HOME="$TEST_TMP/home" CHEZMOI_SOURCE_DIR="$TEST_TMP/source" \
 [[ ! -e "$TEST_TMP/source" ]] || fail "dry-run created a source directory"
 
 clt_output="$(HOME="$TEST_TMP/home" CHEZMOI_SOURCE_DIR="$TEST_TMP/clt-source" \
-    TERMINAL_SETUP_TEST_CLT_MISSING=1 "$ROOT/setup.sh" --dry-run 2>&1)"
+    TERMINAL_SETUP_TEST_PLATFORM=macos TERMINAL_SETUP_TEST_CLT_MISSING=1 "$ROOT/setup.sh" --dry-run 2>&1)"
 rg -q 'Xcode Command Line Tools installer' <<< "$clt_output" || fail "macOS CLT bootstrap was not previewed"
 
 linux_home="$TEST_TMP/linux-home"
@@ -367,13 +375,13 @@ for readme in "$ROOT/README.md" "$ROOT/README_EN.md"; do
         fail "$(basename "$readme") contains a public quick-start placeholder"
     fi
 done
-rg -q 'recommendations/' "$ROOT/README.md" || fail "README does not link the optional recommendations"
+rg -q 'RECOMMENDATIONS.md' "$ROOT/README.md" || fail "README does not link the optional recommendations"
 rg -q 'server-setup.sh' "$ROOT/README.md" || fail "README does not document the server profile"
 rg -q 'setup.ps1' "$ROOT/README.md" || fail "README does not document native Windows setup"
 rg -q 'Pixi' "$ROOT/README.md" || fail "README does not document the Pixi package layer"
-rg -q 'CodeBuddy' "$ROOT/recommendations/cli-tools.md" || fail "recommendations omit CodeBuddy"
-rg -q 'determined' "$ROOT/recommendations/uv-tools.md" || fail "uv recommendations omit determined"
-rg -q 'harlequin' "$ROOT/recommendations/uv-tools.md" || fail "uv recommendations omit harlequin"
+rg -q 'CodeBuddy' "$ROOT/RECOMMENDATIONS_EN.md" || fail "recommendations omit CodeBuddy"
+rg -q 'determined' "$ROOT/RECOMMENDATIONS_EN.md" || fail "uv recommendations omit determined"
+rg -q 'harlequin' "$ROOT/RECOMMENDATIONS_EN.md" || fail "uv recommendations omit harlequin"
 rg -q 'ssh-keygen -y -f' "$ROOT/README.md" || fail "README does not document SSH public-key recovery"
 rg -q '缺少时自动打开同一个 macOS 系统安装器' "$ROOT/README.md" || \
     fail "README does not document automatic macOS CLT bootstrap behavior"
