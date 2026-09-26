@@ -1,0 +1,26 @@
+# Copy outside the repository and edit for the target server.
+# Paths must be absolute (after expanding ~, $HOME, and $USER).
+[paths]
+shared_mount = "/mnt/shared"
+shared_root = "/mnt/shared/$USER"
+data_mount = "/mnt/data"
+data_root = "/mnt/data/$USER"
+local_root = "~/local"
+links_root = "~/storage"
+
+[storage]
+# Detect unmounted storage before creating directories or syncing data.
+# Disable only for intentional ordinary directories, e.g. a local test.
+require_mounts = true
+# Stable name for THIS server's data backups; choose another on a second host.
+instance = "server-01"
+
+[sync]
+working_dirs = ["code", "tasks"]
+snapshot_dirs = ["scripts", "docs"]
+
+[backup]
+keep_snapshots = 10
+# Include input/output in the scheduled backup only when requested.
+include_data = false
+calendar = "daily"

@@ -13,6 +13,7 @@
 | 一台全新的 Mac，先使用本项目的通用配置 | [全新 Mac](#mac-setup) |
 | 已经拥有自己的 chezmoi/dotfiles 仓库 | [恢复私人环境](#restore-dotfiles) |
 | Debian、Ubuntu、WSL 或 Linux 服务器 | [Linux/WSL](#linux-setup) |
+| 配置服务器共享盘、本地数据盘、工作副本同步和备份 | [可选服务器服务](#server-services) |
 | 服务器上配置 Codex、排查 SSH 环境或 bwrap 错误 | [服务器与 Codex](#server-codex) |
 | 按需安装应用、专业 CLI 或 Python 工具 | [可选推荐](RECOMMENDATIONS.md) |
 | 原生 Windows 与 PowerShell 7 | [原生 Windows](#windows-setup) |
@@ -297,6 +298,21 @@ DOTFILES_REPO='git@github.com:你的账号/你的dotfiles仓库.git'
 ```
 
 私人仓库必须自行用 chezmoi 模板和 `.chezmoiignore` 区分 macOS、Linux 与 Windows；macOS Cask 不能直接用于其他平台。
+
+<a id="server-services"></a>
+
+## 可选服务器存储与备份
+
+[`server-services/`](server-services/README.md) 是独立的服务器初始化选项：按配置建立共享盘、本地工作区、数据盘目录与快捷链接，提供 pull/push、快照、数据备份和可选的用户级定时任务。还提供可独立使用的 Codex/CodeBuddy 运行数据归档与恢复工具。
+
+先复制并编辑 `server-services/config.example.toml`，填入目标服务器的实际路径，再运行：
+
+```sh
+./server-setup.sh --services --config "$HOME/server-services.toml" --dry-run
+./server-setup.sh --services --config "$HOME/server-services.toml"
+```
+
+需要 Python 3.11+、rsync 和已有挂载，无需 sudo。此入口只安装该模块，不重新安装终端环境、不自动同步数据或启用定时任务。具体步骤和迁移方法见 [模块文档](server-services/README.md)。
 
 <a id="server-codex"></a>
 
@@ -612,6 +628,7 @@ terminal-setup/
 ├── doctor.ps1               # 原生 Windows 健康检查
 ├── lib/                     # 平台检测和公共函数
 ├── scripts/                 # age 与完整备份工具
+├── server-services/         # 可选服务器存储、同步与定时备份
 ├── starter/                 # 公共 chezmoi 源状态
 └── tests/                   # 隔离测试与安全检查
 ```

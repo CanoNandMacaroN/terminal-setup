@@ -15,8 +15,11 @@ bash -n "$ROOT/setup.sh" "$ROOT/server-setup.sh" "$ROOT/doctor.sh" "$ROOT/lib/co
 bash -n "$ROOT/starter/.chezmoitemplates/pixi-tools.sh"
 bash -n "$ROOT/scripts/enable-age.sh" "$ROOT/scripts/add-secret.sh" "$ROOT/scripts/full-backup.sh"
 bash -n "$ROOT/scripts/configure-codex.sh"
+bash -n "$ROOT/server-services/setup.sh" "$ROOT/server-services/maintenance.sh"
 if [[ "$(uname -s)" == Linux ]]; then
     python3 "$ROOT/tests/test-configure-codex.py"
+    python3 "$ROOT/server-services/test_service.py"
+    python3 "$ROOT/server-services/test_maintenance.py"
 else
     echo "Skipping Linux-only Codex helper tests on $(uname -s)"
 fi
@@ -341,6 +344,9 @@ server_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/server-source"
     "$ROOT/server-setup.sh" --dry-run)"
 rg -q 'profile: server' <<< "$server_output" || fail "server wrapper did not select the server profile"
 
+services_help="$(TERMINAL_SETUP_TEST_PLATFORM=debian "$ROOT/server-setup.sh" --help)"
+rg -q -- '--services --config' <<< "$services_help" || fail "server wrapper does not document the services entry"
+
 user_only_output="$(HOME="$linux_home" CHEZMOI_SOURCE_DIR="$TEST_TMP/user-only-source" \
     TERMINAL_SETUP_TEST_PLATFORM=debian TERMINAL_SETUP_TEST_CHEZMOI_MISSING=1 \
     TERMINAL_SETUP_TEST_PIXI_MISSING=1 \
@@ -377,6 +383,8 @@ for readme in "$ROOT/README.md" "$ROOT/README_EN.md"; do
 done
 rg -q 'RECOMMENDATIONS.md' "$ROOT/README.md" || fail "README does not link the optional recommendations"
 rg -q 'server-setup.sh' "$ROOT/README.md" || fail "README does not document the server profile"
+rg -q 'server-services/README.md' "$ROOT/README.md" || fail "README does not document optional server services"
+rg -q 'server-services/README_EN.md' "$ROOT/README_EN.md" || fail "English README does not document optional server services"
 rg -q 'setup.ps1' "$ROOT/README.md" || fail "README does not document native Windows setup"
 rg -q 'Pixi' "$ROOT/README.md" || fail "README does not document the Pixi package layer"
 rg -q 'CodeBuddy' "$ROOT/RECOMMENDATIONS_EN.md" || fail "recommendations omit CodeBuddy"

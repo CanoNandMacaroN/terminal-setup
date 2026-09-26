@@ -13,6 +13,7 @@ The default starter is public, credential-free, and ready to use. macOS uses Hom
 | A fresh Mac using the generic public configuration | [Fresh Mac](#mac-setup) |
 | You already own a chezmoi/dotfiles repository | [Restore a private environment](#restore-dotfiles) |
 | Debian, Ubuntu, WSL, or a Linux server | [Linux/WSL](#linux-setup) |
+| Shared/local server storage, working-copy synchronization, and backups | [Optional server services](#server-services) |
 | Server Codex configuration, SSH environment, or bwrap errors | [Servers and Codex](#server-codex) |
 | Optional applications, specialist CLIs, or Python tools | [Recommendations](RECOMMENDATIONS_EN.md) |
 | Native Windows with PowerShell 7 | [Native Windows](#windows-setup) |
@@ -268,6 +269,21 @@ DOTFILES_REPO='git@github.com:your-account/your-dotfiles-repository.git'
 ```
 
 Your private source must use templates and `.chezmoiignore` to distinguish macOS, Linux, and Windows. macOS casks cannot be applied unchanged on other platforms.
+
+<a id="server-services"></a>
+
+## Optional server storage and backups
+
+[`server-services/`](server-services/README_EN.md) is an independent server initialization option. It configures shared storage, local working/data directories and shortcut links, with pull/push, snapshots, data backup, and optional user-level scheduled backups. Standalone tools also archive and restore selected Codex/CodeBuddy runtime data.
+
+Copy and edit `server-services/config.example.toml` for the target machine, then run:
+
+```sh
+./server-setup.sh --services --config "$HOME/server-services.toml" --dry-run
+./server-setup.sh --services --config "$HOME/server-services.toml"
+```
+
+Requires Python 3.11+, rsync, and existing mounts, without sudo. This entry installs only the module: it does not reinstall the terminal environment, synchronize data, or enable a timer automatically. See the [module guide](server-services/README_EN.md) for setup and migration.
 
 <a id="server-codex"></a>
 
@@ -574,6 +590,7 @@ terminal-setup/
 ├── doctor.ps1               # native Windows health check
 ├── lib/                     # platform detection and shared functions
 ├── scripts/                 # age and full-backup tools
+├── server-services/         # optional server storage, synchronization, and scheduled backup
 ├── starter/                 # bundled public chezmoi source state
 └── tests/                   # isolated tests and security checks
 ```
